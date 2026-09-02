@@ -115,11 +115,6 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
     setManualText('');
   }
 
-  function openPresentation() {
-    window.open(`${window.location.origin}${window.location.pathname}?view=presentation`, 'report-navi-presentation', 'popup=yes,width=1440,height=900');
-    window.setTimeout(() => channelRef.current?.postMessage({ type: 'snapshot', payload: snapshotRef.current }), 450);
-  }
-
   function setDemoScenario() {
     setSession((current) => ({
       ...current,
@@ -151,7 +146,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
         <div className="brand-lockup brand-lockup--light"><div className="brand-mark"><span /></div><div><strong>REPORT NAVI</strong><small>LIVE GUIDANCE</small></div></div>
         <div className="live-destination"><span><Icon name="target" size={15}/> PURPOSE</span><strong>{session.objective}</strong></div>
         <div className={`live-timer timer--${timeTone}`}><span>남은 시간</span><strong>{formatClock(remainingSeconds)}</strong><small>{reroute ? `필수 전달 예상 ${formatClock(remainingRequiredSeconds)}` : `목표 ${formatClock(session.timeLimitSeconds)}`}</small></div>
-        <button className="presenter-header-button" type="button" onClick={openPresentation}><Icon name="monitor" size={17}/> 프로젝터 화면 열기 <Icon name="external" size={14}/></button>
+        <a className="presenter-header-button" href={`${window.location.origin}${window.location.pathname}?view=presentation`} target="_blank" rel="noopener noreferrer" onClick={() => window.setTimeout(() => channelRef.current?.postMessage({ type: 'snapshot', payload: snapshotRef.current }), 450)}><Icon name="monitor" size={17}/> 프로젝터 화면 열기 <Icon name="external" size={14}/></a>
         <button className="presenter-end-button" type="button" onClick={() => { speech.stop(); onFinish(); }}><Icon name="stop" size={14}/> 보고 종료</button>
       </header>
 
@@ -208,11 +203,11 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
 
       <footer className="speech-console">
         <div className={`speech-status ${speech.isListening ? 'is-listening' : ''}`}>
-          <button type="button" onClick={speech.isListening ? speech.stop : speech.start} disabled={!speech.supported}><Icon name="mic" size={18}/></button>
+          <button type="button" aria-label={!speech.supported ? '음성 인식 미지원' : speech.isListening ? '음성 인식 중지' : '음성 인식 시작'} aria-pressed={speech.isListening} onClick={speech.isListening ? speech.stop : speech.start} disabled={!speech.supported}><Icon name="mic" size={18}/></button>
           <div><span>{speech.supported ? (speech.isListening ? '음성 인식 중 · ko-KR' : '음성 인식 대기') : '이 브라우저는 Web Speech API를 지원하지 않습니다'}</span><strong>{speech.interimTranscript || speech.error || '마이크를 시작하거나 텍스트 입력으로 전달 여부를 확인하세요.'}</strong></div>
         </div>
         <form className="manual-transcript" onSubmit={(event) => { event.preventDefault(); submitManual(); }}>
-          <input value={manualText} onChange={(event) => setManualText(event.target.value)} placeholder="음성 권한이 없으면 발화 내용을 입력하세요"/>
+          <input aria-label="발화 내용 직접 입력" value={manualText} onChange={(event) => setManualText(event.target.value)} placeholder="음성 권한이 없으면 발화 내용을 입력하세요"/>
           <button type="submit">전달 확인</button>
         </form>
         <button className="console-action" type="button" onClick={() => setEvidenceOpen(true)}><Icon name="search" size={17}/> Evidence Navi</button>

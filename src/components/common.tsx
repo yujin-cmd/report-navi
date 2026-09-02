@@ -46,7 +46,7 @@ const STEPS: Array<{ key: AppStep; label: string }> = [
   { key: 'report', label: '도착 리포트' },
 ];
 
-export function AppHeader({ step }: { step: AppStep }) {
+export function AppHeader({ step, onStepBack }: { step: AppStep; onStepBack?: (step: AppStep) => void }) {
   const activeIndex = STEPS.findIndex((item) => item.key === step);
   return (
     <header className="app-header">
@@ -55,22 +55,25 @@ export function AppHeader({ step }: { step: AppStep }) {
         <div><strong>REPORT NAVI</strong><small>DECISION COMPLETENESS</small></div>
       </div>
       <nav className="step-nav" aria-label="진행 단계">
-        {STEPS.map((item, index) => (
-          <div className={`step-item ${index === activeIndex ? 'active' : ''} ${index < activeIndex ? 'complete' : ''}`} key={item.key}>
-            <span>{index < activeIndex ? <Icon name="check" size={13}/> : index + 1}</span>
-            <em>{item.label}</em>
-          </div>
-        ))}
+        {STEPS.map((item, index) => {
+          const isPastStep = index < activeIndex;
+          const canStepBack = Boolean(onStepBack) && isPastStep && activeIndex < 3;
+          const className = `step-item ${index === activeIndex ? 'active' : ''} ${isPastStep ? 'complete' : ''} ${canStepBack ? 'step-item--clickable' : ''}`;
+          const content = <><span>{isPastStep ? <Icon name="check" size={13}/> : index + 1}</span><em>{item.label}</em></>;
+          return canStepBack
+            ? <button className={className} type="button" key={item.key} onClick={() => onStepBack?.(item.key)} aria-label={`${item.label} 단계로 돌아가기`}>{content}</button>
+            : <div className={className} key={item.key}>{content}</div>;
+        })}
       </nav>
       <div className="header-status"><span /> LOCAL SAFE MODE</div>
     </header>
   );
 }
 
-export function PageShell({ step, children, narrow = false }: { step: AppStep; children: ReactNode; narrow?: boolean }) {
+export function PageShell({ step, children, narrow = false, onStepBack }: { step: AppStep; children: ReactNode; narrow?: boolean; onStepBack?: (step: AppStep) => void }) {
   return (
     <div className="app-shell">
-      <AppHeader step={step} />
+      <AppHeader step={step} onStepBack={onStepBack} />
       <main className={`page-main ${narrow ? 'page-main--narrow' : ''}`}>{children}</main>
     </div>
   );

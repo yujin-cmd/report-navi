@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { requestDecisionSet } from '../lib/ai';
-import type { DecisionItem, ReportSession, SlideData } from '../types';
+import { generateFallbackDecisionSet } from '../lib/report';
+import type { AppStep, DecisionItem, ReportSession, SlideData } from '../types';
 import { Badge, Icon, PageShell, SlideCanvas } from './common';
 
 interface UploadScreenProps {
@@ -9,9 +9,10 @@ interface UploadScreenProps {
   slides: SlideData[];
   onSlidesChange: (slides: SlideData[], demoMode: boolean) => void;
   onReady: (items: DecisionItem[]) => void;
+  onStepBack: (step: AppStep) => void;
 }
 
-export function UploadScreen({ session, slides, onSlidesChange, onReady }: UploadScreenProps) {
+export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepBack }: UploadScreenProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
   const [progress, setProgress] = useState(slides.length ? 100 : 0);
@@ -59,36 +60,22 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady }: Uploa
     onSlidesChange(DEMO_SLIDES.map((slide) => ({ ...slide })), true);
   }
 
-  async function generate() {
+  function generate() {
     if (!slides.length) return;
     setIsLoading(true);
-    setError('');
     setProgress(92);
     setProgressLabel('보고 목적 기준으로 Decision Set 구조화 중');
-
-    if (session.demoMode) {
-      const items = cloneDemoItems();
+    window.setTimeout(() => {
+      const items = session.demoMode ? cloneDemoItems() : generateFallbackDecisionSet(slides, session.objective);
       setProgress(100);
-      setProgressLabel(`${items.length}개 Decision Item 준비 완료 · 사전 확정된 데모 세트`);
+      setProgressLabel(`${items.length}개 Decision Item 생성 완료`);
       setIsLoading(false);
       onReady(items);
-      return;
-    }
-
-    const outcome = await requestDecisionSet(session, slides);
-    setProgress(100);
-    setProgressLabel(
-      outcome.source === 'ai'
-        ? `${outcome.items.length}개 Decision Item 생성 완료 · AI 분석`
-        : `${outcome.items.length}개 Decision Item 생성 완료 · 로컬 분석`,
-    );
-    if (outcome.notice) setError(outcome.notice);
-    setIsLoading(false);
-    onReady(outcome.items);
+    }, 620);
   }
 
   return (
-    <PageShell step="upload">
+    <PageShell step="upload" onStepBack={onStepBack}>
       <div className="page-title-row">
         <div><span className="eyebrow"><Icon name="upload" size={15}/> SOURCE ANALYSIS</span><h1>보고자료를 분석합니다</h1><p>첫 PDF를 보고자료로 읽고, 목적지에 필요한 정보만 구조화합니다.</p></div>
         <div className="destination-chip"><span>현재 목적지</span><strong>{session.objective}</strong></div>
@@ -138,7 +125,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady }: Uploa
           <div className="thumbnail-strip">
             {slides.map((slide) => <div className="thumbnail-card" key={slide.page}><div><SlideCanvas slide={slide} compact/></div><span>Slide {slide.page}</span></div>)}
           </div>
-          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={() => void generate()} disabled={isLoading}>AI로 Decision Set 생성 <Icon name="arrow-right"/></button></div>
+          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={generate} disabled={isLoading}>AI로 Decision Set 생성 <Icon name="arrow-right"/></button></div>
         </section>
       )}
     </PageShell>

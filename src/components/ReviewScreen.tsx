@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { DEMO_QUESTIONS } from '../data/demo';
-import { DECISION_LABELS, type DecisionItem, type DecisionType, type ReportSession } from '../types';
+import { generateExpectedQuestions } from '../lib/report';
+import { DECISION_LABELS, type AppStep, type DecisionItem, type DecisionType, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
-export function ReviewScreen({ session, onStart }: { session: ReportSession; onStart: (items: DecisionItem[]) => void }) {
+export function ReviewScreen({ session, onStart, onStepBack }: { session: ReportSession; onStart: (items: DecisionItem[]) => void; onStepBack: (step: AppStep) => void }) {
   const [items, setItems] = useState(session.decisionItems);
   const [questionOpen, setQuestionOpen] = useState(true);
   const requiredCount = items.filter((item) => item.required).length;
@@ -14,6 +15,10 @@ export function ReviewScreen({ session, onStart }: { session: ReportSession; onS
     (Object.keys(DECISION_LABELS) as DecisionType[]).forEach((type) => { result[type] = items.filter((item) => item.type === type); });
     return result;
   }, [items]);
+  const expectedQuestions = useMemo(
+    () => session.demoMode ? DEMO_QUESTIONS : generateExpectedQuestions(items, session.objective),
+    [items, session.demoMode, session.objective],
+  );
 
   function update(id: string, patch: Partial<DecisionItem>) {
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
@@ -34,7 +39,7 @@ export function ReviewScreen({ session, onStart }: { session: ReportSession; onS
   }
 
   return (
-    <PageShell step="review">
+    <PageShell step="review" onStepBack={onStepBack}>
       <div className="page-title-row review-title-row">
         <div><span className="eyebrow"><Icon name="spark" size={15}/> DECISION SET</span><h1>보고 전 기준을 확정하세요</h1><p>AI가 제안한 항목을 검토하고, 실제 보고에서 반드시 전달할 정보를 선택합니다.</p></div>
         <button type="button" className="button button--secondary" onClick={addItem}><Icon name="plus" size={17}/> 새 항목 추가</button>
@@ -60,8 +65,8 @@ export function ReviewScreen({ session, onStart }: { session: ReportSession; onS
                     <span>{item.required && <Icon name="check" size={13}/>}</span>{item.required ? '필수' : '선택'}
                   </button>
                   <div className="editor-content">
-                    <input className="editor-title" value={item.title} onChange={(event) => update(item.id, { title: event.target.value })}/>
-                    <textarea rows={2} value={item.detail} onChange={(event) => update(item.id, { detail: event.target.value })}/>
+                    <input className="editor-title" aria-label={`${DECISION_LABELS[item.type]} 항목 제목`} value={item.title} onChange={(event) => update(item.id, { title: event.target.value })}/>
+                    <textarea rows={2} aria-label={`${DECISION_LABELS[item.type]} 항목 상세 내용`} value={item.detail} onChange={(event) => update(item.id, { detail: event.target.value })}/>
                     <div className="editor-meta">
                       <label>유형<select value={item.type} onChange={(event) => update(item.id, { type: event.target.value as DecisionType })}>{Object.entries(DECISION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                       <label>Slide <input type="number" min={1} value={item.slide} onChange={(event) => update(item.id, { slide: Number(event.target.value) })}/></label>
@@ -85,7 +90,7 @@ export function ReviewScreen({ session, onStart }: { session: ReportSession; onS
 
           <div className="question-panel">
             <button type="button" onClick={() => setQuestionOpen((value) => !value)}><span><Icon name="search" size={17}/><strong>예상 확인 질문</strong></span><Icon name={questionOpen ? 'chevron-left' : 'chevron-right'} size={16}/></button>
-            {questionOpen && <div>{DEMO_QUESTIONS.map((question, index) => <p key={question}><span>Q{index + 1}</span>{question}</p>)}</div>}
+            {questionOpen && <div>{expectedQuestions.map((question, index) => <p key={question}><span>Q{index + 1}</span>{question}</p>)}</div>}
           </div>
 
           <div className="review-principle"><Icon name="alert" size={17}/><p><strong>최종 책임은 보고자에게 있습니다.</strong>자동 추출 결과는 실전 전에 반드시 확인하세요.</p></div>

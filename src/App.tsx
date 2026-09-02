@@ -95,9 +95,17 @@ export default function App() {
     }
   }
 
-  if (step === 'setup') return <SetupScreen session={session} onContinue={continueSetup} />;
-  if (step === 'upload') return <UploadScreen session={session} slides={slides} onSlidesChange={updateSlides} onReady={readyDecisionSet} />;
-  if (step === 'review') return <ReviewScreen session={session} onStart={startReport} />;
+  function returnToPriorStep(target: AppStep) {
+    const steps: AppStep[] = ['setup', 'upload', 'review', 'presenter', 'report'];
+    const targetIndex = steps.indexOf(target);
+    const currentIndex = steps.indexOf(step);
+    const canReturn = targetIndex >= 0 && targetIndex < currentIndex && currentIndex < steps.indexOf('presenter');
+    if (canReturn) setStep(target);
+  }
+
+  if (step === 'setup') return <SetupScreen session={session} onContinue={continueSetup} onStepBack={returnToPriorStep} />;
+  if (step === 'upload') return <UploadScreen session={session} slides={slides} onSlidesChange={updateSlides} onReady={readyDecisionSet} onStepBack={returnToPriorStep} />;
+  if (step === 'review') return <ReviewScreen session={session} onStart={startReport} onStepBack={returnToPriorStep} />;
   if (step === 'presenter') return <PresenterScreen session={session} slides={slides.length ? slides : DEMO_SLIDES} setSession={setSession} onFinish={finishReport} />;
-  return <ReportScreen session={session} onRestart={restart} onReview={() => setStep('review')} />;
+  return <ReportScreen session={session} onRestart={restart} onReview={() => setStep('review')} onStepBack={returnToPriorStep} />;
 }

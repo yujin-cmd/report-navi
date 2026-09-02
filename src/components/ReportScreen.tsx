@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { formatClock } from '../lib/report';
-import { DECISION_LABELS, type ReportSession } from '../types';
+import { DECISION_LABELS, type AppStep, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
-export function ReportScreen({ session, onRestart, onReview }: { session: ReportSession; onRestart: () => void; onReview: () => void }) {
+export function ReportScreen({ session, onRestart, onReview, onStepBack }: { session: ReportSession; onRestart: () => void; onReview: () => void; onStepBack: (step: AppStep) => void }) {
   const required = session.decisionItems.filter((item) => item.required);
   const optional = session.decisionItems.filter((item) => !item.required);
   const requiredDelivered = required.filter((item) => item.delivered).length;
@@ -21,7 +21,7 @@ export function ReportScreen({ session, onRestart, onReview }: { session: Report
   }, [actualSeconds, completion, session]);
 
   return (
-    <PageShell step="report">
+    <PageShell step="report" onStepBack={onStepBack}>
       <section className="report-hero">
         <div><span className="eyebrow"><Icon name="target" size={15}/> ARRIVAL REPORT</span><h1>도착 리포트</h1><p>이번 보고에서 의사결정에 필요한 정보가 어디까지 전달됐는지 정리했습니다.</p></div>
         <div className="report-grade"><div style={{ '--progress': `${completion * 3.6}deg` } as React.CSSProperties}><span><strong>{completion}</strong><em>%</em><small>필수 전달률</small></span></div><p>{completion === 100 ? '목적지 도착' : '보완 필요'}</p></div>

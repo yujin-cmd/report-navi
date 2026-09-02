@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { findDeliveredItemIds, generateFallbackDecisionSet, normalizeText, searchEvidence, shouldReroute } from './report';
+import { findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, normalizeText, searchEvidence, shouldReroute } from './report';
 
 describe('Report Navi local matching', () => {
   it('normalizes Korean numeric unit variants', () => {
@@ -37,5 +37,15 @@ describe('Report Navi local matching', () => {
     const generated = generateFallbackDecisionSet(DEMO_SLIDES, 'B안 적용 승인을 받는다.');
     expect(generated.map((item) => item.type).sort()).toEqual(['assumption', 'conclusion', 'evidence', 'request', 'risk']);
     expect(generated.every((item) => item.required)).toBe(true);
+  });
+
+  it('generates expected questions from the uploaded document decision set', () => {
+    const uploadedItems = cloneDemoItems().map((item) => item.type === 'evidence'
+      ? { ...item, title: '업로드 자료의 총사업비 42억원', detail: '사용자가 올린 PDF에서 추출한 총사업비다.' }
+      : item);
+    const questions = generateExpectedQuestions(uploadedItems, '사업비 승인을 받는다.');
+    expect(questions).toHaveLength(3);
+    expect(questions.join(' ')).toContain('업로드 자료의 총사업비 42억원');
+    expect(questions.join(' ')).not.toContain('106.2kW 산정에 적용한 부하 증가 가정');
   });
 });

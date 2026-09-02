@@ -1,4 +1,4 @@
-import type { DecisionItem, DecisionType, EvidenceResult, SlideData } from '../types';
+import { DECISION_LABELS, type DecisionItem, type DecisionType, type EvidenceResult, type SlideData } from '../types';
 
 const STOP_WORDS = new Set([
   '그리고', '하지만', '대한', '관련', '이번', '해당', '현재', '저희', '것입니다', '합니다',
@@ -176,6 +176,45 @@ export function generateFallbackDecisionSet(slides: SlideData[], objective: stri
       delivered: false,
     };
   });
+}
+
+const QUESTION_TYPE_ORDER: DecisionType[] = ['evidence', 'assumption', 'risk', 'request', 'conclusion'];
+
+function questionSubject(item: DecisionItem): string {
+  const parts = item.title.split('·');
+  const subject = (parts.length > 1 ? parts.slice(1).join('·') : item.title).trim();
+  return subject || item.detail.trim() || DECISION_LABELS[item.type];
+}
+
+export function generateExpectedQuestions(items: DecisionItem[], objective: string, limit = 3): string[] {
+  const ordered = [...items].sort((left, right) => {
+    const requiredOrder = Number(right.required) - Number(left.required);
+    if (requiredOrder) return requiredOrder;
+    return QUESTION_TYPE_ORDER.indexOf(left.type) - QUESTION_TYPE_ORDER.indexOf(right.type);
+  });
+  const usedTypes = new Set<DecisionType>();
+  const questions: string[] = [];
+
+  for (const item of ordered) {
+    if (questions.length >= limit || usedTypes.has(item.type)) continue;
+    const subject = questionSubject(item);
+    const question = item.type === 'evidence'
+      ? `“${subject}”의 산정 기준과 원본 근거는 무엇입니까?`
+      : item.type === 'assumption'
+        ? `“${subject}” 전제가 달라지면 결론에 어떤 영향이 있습니까?`
+        : item.type === 'risk'
+          ? `“${subject}” 리스크가 현실화될 경우 대응 방안은 무엇입니까?`
+          : item.type === 'request'
+            ? `“${subject}” 결정이 지연되면 일정이나 비용에 어떤 영향이 있습니까?`
+            : `“${subject}”을 다른 대안보다 우선해야 하는 이유는 무엇입니까?`;
+    questions.push(question);
+    usedTypes.add(item.type);
+  }
+
+  if (!questions.length) {
+    questions.push(`보고 목적 “${objective}”을 달성하기 위해 반드시 확인해야 할 근거는 무엇입니까?`);
+  }
+  return questions.slice(0, Math.max(1, limit));
 }
 
 export function validateDecisionItems(value: unknown): value is DecisionItem[] {

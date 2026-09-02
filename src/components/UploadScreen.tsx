@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { generateFallbackDecisionSet } from '../lib/report';
+import { requestDecisionSet } from '../lib/ai';
 import type { DecisionItem, ReportSession, SlideData } from '../types';
 import { Badge, Icon, PageShell, SlideCanvas } from './common';
 
@@ -59,18 +59,32 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady }: Uploa
     onSlidesChange(DEMO_SLIDES.map((slide) => ({ ...slide })), true);
   }
 
-  function generate() {
+  async function generate() {
     if (!slides.length) return;
     setIsLoading(true);
+    setError('');
     setProgress(92);
     setProgressLabel('보고 목적 기준으로 Decision Set 구조화 중');
-    window.setTimeout(() => {
-      const items = session.demoMode ? cloneDemoItems() : generateFallbackDecisionSet(slides, session.objective);
+
+    if (session.demoMode) {
+      const items = cloneDemoItems();
       setProgress(100);
-      setProgressLabel(`${items.length}개 Decision Item 생성 완료`);
+      setProgressLabel(`${items.length}개 Decision Item 준비 완료 · 사전 확정된 데모 세트`);
       setIsLoading(false);
       onReady(items);
-    }, 620);
+      return;
+    }
+
+    const outcome = await requestDecisionSet(session, slides);
+    setProgress(100);
+    setProgressLabel(
+      outcome.source === 'ai'
+        ? `${outcome.items.length}개 Decision Item 생성 완료 · AI 분석`
+        : `${outcome.items.length}개 Decision Item 생성 완료 · 로컬 분석`,
+    );
+    if (outcome.notice) setError(outcome.notice);
+    setIsLoading(false);
+    onReady(outcome.items);
   }
 
   return (
@@ -124,7 +138,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady }: Uploa
           <div className="thumbnail-strip">
             {slides.map((slide) => <div className="thumbnail-card" key={slide.page}><div><SlideCanvas slide={slide} compact/></div><span>Slide {slide.page}</span></div>)}
           </div>
-          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={generate} disabled={isLoading}>AI로 Decision Set 생성 <Icon name="arrow-right"/></button></div>
+          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={() => void generate()} disabled={isLoading}>AI로 Decision Set 생성 <Icon name="arrow-right"/></button></div>
         </section>
       )}
     </PageShell>

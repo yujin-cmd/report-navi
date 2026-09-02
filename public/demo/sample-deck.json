@@ -1,0 +1,6 @@
+{
+  "name": "데이터센터 냉각설비 설계안 검토",
+  "notice": "모든 수치와 조건은 공모전 시연을 위한 가상값입니다.",
+  "pages": 8,
+  "decisionTypes": ["conclusion", "evidence", "assumption", "risk", "request"]
+}

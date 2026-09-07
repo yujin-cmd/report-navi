@@ -46,8 +46,10 @@ const STEPS: Array<{ key: AppStep; label: string }> = [
   { key: 'report', label: '도착 리포트' },
 ];
 
-export function AppHeader({ step, onStepBack }: { step: AppStep; onStepBack?: (step: AppStep) => void }) {
+export function AppHeader({ step, onStepNavigate, furthestStep = step }: { step: AppStep; onStepNavigate?: (step: AppStep) => void; furthestStep?: AppStep }) {
   const activeIndex = STEPS.findIndex((item) => item.key === step);
+  const furthestIndex = STEPS.findIndex((item) => item.key === furthestStep);
+  const presenterIndex = STEPS.findIndex((item) => item.key === 'presenter');
   return (
     <header className="app-header">
       <div className="brand-lockup">
@@ -56,12 +58,14 @@ export function AppHeader({ step, onStepBack }: { step: AppStep; onStepBack?: (s
       </div>
       <nav className="step-nav" aria-label="진행 단계">
         {STEPS.map((item, index) => {
-          const isPastStep = index < activeIndex;
-          const canStepBack = Boolean(onStepBack) && isPastStep && activeIndex < 3;
-          const className = `step-item ${index === activeIndex ? 'active' : ''} ${isPastStep ? 'complete' : ''} ${canStepBack ? 'step-item--clickable' : ''}`;
-          const content = <><span>{isPastStep ? <Icon name="check" size={13}/> : index + 1}</span><em>{item.label}</em></>;
-          return canStepBack
-            ? <button className={className} type="button" key={item.key} onClick={() => onStepBack?.(item.key)} aria-label={`${item.label} 단계로 돌아가기`}>{content}</button>
+          const isReached = index <= furthestIndex && index < presenterIndex;
+          const isComplete = index < activeIndex || (isReached && index !== activeIndex);
+          const canNavigate = Boolean(onStepNavigate) && activeIndex < presenterIndex && isReached && index !== activeIndex;
+          const isForward = canNavigate && index > activeIndex;
+          const className = `step-item ${index === activeIndex ? 'active' : ''} ${isComplete ? 'complete' : ''} ${canNavigate ? 'step-item--clickable' : ''} ${isForward ? 'step-item--forward' : ''}`;
+          const content = <><span>{isComplete ? <Icon name="check" size={13}/> : index + 1}</span><em>{item.label}</em></>;
+          return canNavigate
+            ? <button className={className} type="button" key={item.key} onClick={() => onStepNavigate?.(item.key)} aria-label={`${item.label} 단계로 ${isForward ? '이동하기' : '돌아가기'}`} title={`${item.label} 단계로 ${isForward ? '이동' : '돌아가기'}`}>{content}</button>
             : <div className={className} key={item.key}>{content}</div>;
         })}
       </nav>
@@ -70,10 +74,10 @@ export function AppHeader({ step, onStepBack }: { step: AppStep; onStepBack?: (s
   );
 }
 
-export function PageShell({ step, children, narrow = false, onStepBack }: { step: AppStep; children: ReactNode; narrow?: boolean; onStepBack?: (step: AppStep) => void }) {
+export function PageShell({ step, children, narrow = false, onStepNavigate, furthestStep }: { step: AppStep; children: ReactNode; narrow?: boolean; onStepNavigate?: (step: AppStep) => void; furthestStep?: AppStep }) {
   return (
     <div className="app-shell">
-      <AppHeader step={step} onStepBack={onStepBack} />
+      <AppHeader step={step} onStepNavigate={onStepNavigate} furthestStep={furthestStep} />
       <main className={`page-main ${narrow ? 'page-main--narrow' : ''}`}>{children}</main>
     </div>
   );

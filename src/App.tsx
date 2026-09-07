@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createDefaultSession, DEMO_SLIDES } from './data/demo';
+import { cloneDemoItems, createDefaultSession, DEMO_SLIDES } from './data/demo';
 import type { AppStep, DecisionItem, ReportSession, SlideData } from './types';
 import { ProjectorScreen } from './components/ProjectorScreen';
 import { ReportScreen } from './components/ReportScreen';
@@ -12,8 +12,11 @@ function loadDraft(): ReportSession {
   try {
     const stored = localStorage.getItem('report-navi:draft');
     if (stored) {
-      const parsed = JSON.parse(stored) as ReportSession;
-      if (parsed?.id && Array.isArray(parsed.decisionItems)) return parsed;
+      const parsed = JSON.parse(stored) as ReportSession & { rerouteCount?: number };
+      if (parsed?.id && Array.isArray(parsed.decisionItems)) {
+        const { rerouteCount, ...current } = parsed;
+        return { ...createDefaultSession(), ...current, priorityGuideCount: parsed.priorityGuideCount ?? rerouteCount ?? 0 };
+      }
     }
   } catch {
     // Storage is optional; a fresh session is the safe fallback.
@@ -27,16 +30,29 @@ function initialStep(session: ReportSession): AppStep {
   return 'setup';
 }
 
+const PRE_REPORT_STEPS: AppStep[] = ['setup', 'upload', 'review'];
+
+function furthestPreReportStep(step: AppStep): AppStep {
+  const index = PRE_REPORT_STEPS.indexOf(step);
+  return index >= 0 ? step : 'review';
+}
+
 export default function App() {
   const [session, setSession] = useState<ReportSession>(() => loadDraft());
   const [step, setStep] = useState<AppStep>(() => initialStep(loadDraft()));
+  const [furthestStep, setFurthestStep] = useState<AppStep>(() => furthestPreReportStep(initialStep(loadDraft())));
   const [slides, setSlides] = useState<SlideData[]>(() => loadDraft().demoMode ? DEMO_SLIDES.map((slide) => ({ ...slide })) : []);
   const projectorMode = new URLSearchParams(window.location.search).get('view') === 'presentation';
 
   useEffect(() => {
     if (projectorMode) return;
     try {
-      localStorage.setItem('report-navi:draft', JSON.stringify(session));
+      const safeDraft = {
+        ...session,
+        transcript: '',
+        decisionItems: session.decisionItems.map(({ sourceText: _sourceText, ...item }) => item),
+      };
+      localStorage.setItem('report-navi:draft', JSON.stringify(safeDraft));
     } catch {
       // Continue without persistence if browser storage is blocked.
     }
@@ -49,17 +65,25 @@ export default function App() {
   if (projectorMode) return <ProjectorScreen />;
 
   function continueSetup(next: ReportSession) {
-    setSession(next);
+    const destinationChanged = next.title !== session.title
+      || next.objectiveType !== session.objectiveType
+      || next.objective !== session.objective
+      || next.timeLimitSeconds !== session.timeLimitSeconds
+      || next.meetingEndAt !== session.meetingEndAt;
+    setSession(destinationChanged ? { ...next, decisionItems: [] } : next);
+    setFurthestStep((current) => destinationChanged || PRE_REPORT_STEPS.indexOf(current) < 1 ? 'upload' : current);
     setStep('upload');
   }
 
   function updateSlides(nextSlides: SlideData[], demoMode: boolean) {
     setSlides(nextSlides);
-    setSession((current) => ({ ...current, demoMode }));
+    setSession((current) => ({ ...current, demoMode, decisionItems: [] }));
+    setFurthestStep('upload');
   }
 
   function readyDecisionSet(items: DecisionItem[]) {
     setSession((current) => ({ ...current, decisionItems: items, currentSlide: 1, transcript: '' }));
+    setFurthestStep('review');
     setStep('review');
   }
 
@@ -71,11 +95,23 @@ export default function App() {
       startedAt: Date.now(),
       endedAt: undefined,
       transcript: '',
-      rerouteCount: 0,
+      priorityGuideCount: 0,
       evidenceSearchCount: 0,
       manualOverrideCount: 0,
     }));
     setStep('presenter');
+  }
+
+  function startSampleReport() {
+    const sample = {
+      ...createDefaultSession(),
+      demoMode: true,
+      decisionItems: cloneDemoItems(),
+    };
+    setSession(sample);
+    setSlides(DEMO_SLIDES.map((slide) => ({ ...slide })));
+    setFurthestStep('review');
+    setStep('review');
   }
 
   function finishReport() {
@@ -87,6 +123,7 @@ export default function App() {
     const fresh = createDefaultSession();
     setSession(fresh);
     setSlides([]);
+    setFurthestStep('setup');
     setStep('setup');
     try {
       localStorage.removeItem('report-navi:draft');
@@ -95,17 +132,17 @@ export default function App() {
     }
   }
 
-  function returnToPriorStep(target: AppStep) {
-    const steps: AppStep[] = ['setup', 'upload', 'review', 'presenter', 'report'];
-    const targetIndex = steps.indexOf(target);
-    const currentIndex = steps.indexOf(step);
-    const canReturn = targetIndex >= 0 && targetIndex < currentIndex && currentIndex < steps.indexOf('presenter');
-    if (canReturn) setStep(target);
+  function navigateToReachedStep(target: AppStep) {
+    const targetIndex = PRE_REPORT_STEPS.indexOf(target);
+    const furthestIndex = PRE_REPORT_STEPS.indexOf(furthestStep);
+    const currentIndex = PRE_REPORT_STEPS.indexOf(step);
+    const canNavigate = currentIndex >= 0 && targetIndex >= 0 && targetIndex <= furthestIndex && target !== step;
+    if (canNavigate) setStep(target);
   }
 
-  if (step === 'setup') return <SetupScreen session={session} onContinue={continueSetup} onStepBack={returnToPriorStep} />;
-  if (step === 'upload') return <UploadScreen session={session} slides={slides} onSlidesChange={updateSlides} onReady={readyDecisionSet} onStepBack={returnToPriorStep} />;
-  if (step === 'review') return <ReviewScreen session={session} onStart={startReport} onStepBack={returnToPriorStep} />;
+  if (step === 'setup') return <SetupScreen session={session} onContinue={continueSetup} onSampleStart={startSampleReport} onStepNavigate={navigateToReachedStep} furthestStep={furthestStep} />;
+  if (step === 'upload') return <UploadScreen session={session} slides={slides} onSlidesChange={updateSlides} onReady={readyDecisionSet} onStepNavigate={navigateToReachedStep} furthestStep={furthestStep} />;
+  if (step === 'review') return <ReviewScreen session={session} onStart={startReport} onStepNavigate={navigateToReachedStep} furthestStep={furthestStep} />;
   if (step === 'presenter') return <PresenterScreen session={session} slides={slides.length ? slides : DEMO_SLIDES} setSession={setSession} onFinish={finishReport} />;
-  return <ReportScreen session={session} onRestart={restart} onReview={() => setStep('review')} onStepBack={returnToPriorStep} />;
+  return <ReportScreen session={session} onRestart={restart} onReview={() => setStep('review')} onStepNavigate={navigateToReachedStep} furthestStep={furthestStep} />;
 }

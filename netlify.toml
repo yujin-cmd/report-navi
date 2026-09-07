@@ -2,9 +2,6 @@
   command = "pnpm build"
   publish = "dist"
 
-[functions]
-  directory = "netlify/functions"
-
 [build.environment]
   NODE_VERSION = "20"
 

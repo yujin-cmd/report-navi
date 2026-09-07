@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, normalizeText, searchEvidence, shouldReroute } from './report';
+import { findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, normalizeText, searchEvidence, shouldPrioritize } from './report';
 
 describe('Report Navi local matching', () => {
   it('normalizes Korean numeric unit variants', () => {
@@ -22,9 +22,9 @@ describe('Report Navi local matching', () => {
     expect(ids).not.toContain('demo-evidence-load');
   });
 
-  it('reroutes when remaining time cannot cover required items', () => {
-    expect(shouldReroute(30, cloneDemoItems())).toBe(true);
-    expect(shouldReroute(300, cloneDemoItems())).toBe(false);
+  it('prioritizes required items when configured time is too short', () => {
+    expect(shouldPrioritize(30, cloneDemoItems())).toBe(true);
+    expect(shouldPrioritize(300, cloneDemoItems())).toBe(false);
   });
 
   it('finds the supporting slide without generating an answer', () => {

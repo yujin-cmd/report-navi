@@ -9,10 +9,11 @@ interface UploadScreenProps {
   slides: SlideData[];
   onSlidesChange: (slides: SlideData[], demoMode: boolean) => void;
   onReady: (items: DecisionItem[]) => void;
-  onStepBack: (step: AppStep) => void;
+  onStepNavigate: (step: AppStep) => void;
+  furthestStep: AppStep;
 }
 
-export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepBack }: UploadScreenProps) {
+export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepNavigate, furthestStep }: UploadScreenProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
   const [progress, setProgress] = useState(slides.length ? 100 : 0);
@@ -64,7 +65,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepB
     if (!slides.length) return;
     setIsLoading(true);
     setProgress(92);
-    setProgressLabel('보고 목적 기준으로 Decision Set 구조화 중');
+    setProgressLabel(session.demoMode ? '샘플 Decision Set 준비 중' : '로컬 기본 분석으로 Decision Set 구조화 중');
     window.setTimeout(() => {
       const items = session.demoMode ? cloneDemoItems() : generateFallbackDecisionSet(slides, session.objective);
       setProgress(100);
@@ -75,7 +76,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepB
   }
 
   return (
-    <PageShell step="upload" onStepBack={onStepBack}>
+    <PageShell step="upload" onStepNavigate={onStepNavigate} furthestStep={furthestStep}>
       <div className="page-title-row">
         <div><span className="eyebrow"><Icon name="upload" size={15}/> SOURCE ANALYSIS</span><h1>보고자료를 분석합니다</h1><p>첫 PDF를 보고자료로 읽고, 목적지에 필요한 정보만 구조화합니다.</p></div>
         <div className="destination-chip"><span>현재 목적지</span><strong>{session.objective}</strong></div>
@@ -97,8 +98,8 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepB
           </div>
 
           <div className="demo-loader">
-            <div><Badge tone="blue">3분 시연용</Badge><strong>가상 냉각설비 자료로 바로 시작</strong><p>실제 기업자료가 아닌 8장 HTML 데모 덱입니다.</p></div>
-            <button type="button" className="button button--ghost" onClick={loadDemo}>샘플 자료 불러오기 <Icon name="spark" size={16}/></button>
+            <div><Badge tone="blue">3분 시연용</Badge><strong>가상 냉각설비 보고로 바로 체험</strong><p>실제 기업자료가 아닌 8장 HTML 데모 덱입니다.</p></div>
+            <button type="button" className="button button--ghost" onClick={loadDemo}>샘플 보고로 체험하기 <Icon name="spark" size={16}/></button>
           </div>
 
           {(progress > 0 || isLoading) && (
@@ -115,7 +116,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepB
           {(['conclusion', 'evidence', 'assumption', 'risk', 'request'] as const).map((type, index) => (
             <div className={`analysis-type type-${type}`} key={type}><span>{index + 1}</span><div><strong>{['결론', '근거', '전제조건', '리스크', '요청·결정'][index]}</strong><small>{['무엇을 제안하는가', '왜 이 판단이 타당한가', '어떤 조건에서 성립하는가', '무엇을 감수해야 하는가', '어떤 행동이 필요한가'][index]}</small></div></div>
           ))}
-          <div className="safe-mode-note"><Icon name="spark" size={17}/><div><strong>AI 없이도 중단되지 않습니다</strong><p>API가 없는 현재 빌드는 PDF 텍스트와 키워드를 이용한 로컬 fallback으로 5개 유형을 생성합니다.</p></div></div>
+          <div className="safe-mode-note"><Icon name="spark" size={17}/><div><strong>현재 빌드는 로컬 기본 분석을 사용합니다</strong><p>PDF 텍스트와 키워드로 5개 유형을 생성하며, 외부 AI 연결 실패 시에도 같은 방식으로 계속 진행할 수 있습니다.</p></div></div>
         </aside>
       </section>
 
@@ -125,7 +126,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepB
           <div className="thumbnail-strip">
             {slides.map((slide) => <div className="thumbnail-card" key={slide.page}><div><SlideCanvas slide={slide} compact/></div><span>Slide {slide.page}</span></div>)}
           </div>
-          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={generate} disabled={isLoading}>AI로 Decision Set 생성 <Icon name="arrow-right"/></button></div>
+          <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={generate} disabled={isLoading}>Decision Set 생성 <Icon name="arrow-right"/></button></div>
         </section>
       )}
     </PageShell>

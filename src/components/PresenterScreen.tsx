@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { findDeliveredItemIds, formatClock, getNextRequiredItem, getRemainingRequiredSeconds, shouldReroute } from '../lib/report';
+import { findDeliveredItemIds, formatClock, getNextRequiredItem, shouldPrioritize } from '../lib/report';
 import { DECISION_LABELS, type ProjectorSnapshot, type ReportSession, type SlideData } from '../types';
 import { Badge, Icon, SlideCanvas } from './common';
 import { EvidenceDrawer } from './EvidenceDrawer';
@@ -18,22 +18,27 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [manualText, setManualText] = useState('');
-  const [showOptionalInReroute, setShowOptionalInReroute] = useState(false);
   const warnedRef = useRef(new Set<string>());
-  const rerouteActiveRef = useRef(false);
+  const priorityGuideActiveRef = useRef(false);
   const toastTimerRef = useRef<number>();
   const channelRef = useRef<BroadcastChannel | null>(null);
   const snapshotRef = useRef<ProjectorSnapshot>({ currentSlide: session.currentSlide, slides, title: session.title, objective: session.objective });
   const slidesRef = useRef(slides);
 
   const elapsedSeconds = Math.max(0, Math.floor((now - (session.startedAt || now)) / 1000));
-  const remainingSeconds = Math.max(0, session.timeLimitSeconds - elapsedSeconds);
-  const remainingRequiredSeconds = getRemainingRequiredSeconds(session.decisionItems);
-  const reroute = shouldReroute(remainingSeconds, session.decisionItems);
+  const meetingEndTimestamp = session.meetingEndAt ? new Date(session.meetingEndAt).getTime() : Number.NaN;
+  const configuredTimes = [
+    session.timeLimitSeconds ? Math.max(0, session.timeLimitSeconds - elapsedSeconds) : undefined,
+    Number.isFinite(meetingEndTimestamp) ? Math.max(0, Math.floor((meetingEndTimestamp - now) / 1000)) : undefined,
+  ].filter((value): value is number => typeof value === 'number');
+  const hasTimeGuide = configuredTimes.length > 0;
+  const remainingSeconds = hasTimeGuide ? Math.min(...configuredTimes) : 0;
+  const priorityGuide = hasTimeGuide && shouldPrioritize(remainingSeconds, session.decisionItems);
   const activeSlide = slides.find((slide) => slide.page === session.currentSlide) || slides[0];
   const remainingItems = session.decisionItems.filter((item) => !item.delivered);
   const remainingRequired = remainingItems.filter((item) => item.required).sort((a, b) => a.slide - b.slide);
-  const deliveredCount = session.decisionItems.filter((item) => item.delivered).length;
+  const requiredItems = session.decisionItems.filter((item) => item.required);
+  const deliveredRequiredCount = requiredItems.filter((item) => item.delivered).length;
   const nextItem = getNextRequiredItem(session.decisionItems, session.currentSlide);
 
   useEffect(() => {
@@ -42,13 +47,13 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   }, []);
 
   useEffect(() => {
-    if (reroute && !rerouteActiveRef.current) {
-      rerouteActiveRef.current = true;
-      setSession((current) => ({ ...current, rerouteCount: current.rerouteCount + 1 }));
-    } else if (!reroute) {
-      rerouteActiveRef.current = false;
+    if (priorityGuide && !priorityGuideActiveRef.current) {
+      priorityGuideActiveRef.current = true;
+      setSession((current) => ({ ...current, priorityGuideCount: current.priorityGuideCount + 1 }));
+    } else if (!priorityGuide) {
+      priorityGuideActiveRef.current = false;
     }
-  }, [reroute, setSession]);
+  }, [priorityGuide, setSession]);
 
   const announce = useCallback((message: string) => {
     setToast(message);
@@ -129,28 +134,28 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   }
 
   function setThirtySeconds() {
-    setSession((current) => {
-      const elapsedForThirtySeconds = Math.max(0, current.timeLimitSeconds - 30);
-      return { ...current, startedAt: Date.now() - elapsedForThirtySeconds * 1000 };
-    });
-    announce('남은 시간을 30초로 조정했습니다.');
+    setSession((current) => ({ ...current, timeLimitSeconds: 30, meetingEndAt: undefined, startedAt: Date.now() }));
+    announce('선택 시간 안내를 30초로 설정했습니다.');
   }
 
-  const progress = session.decisionItems.length ? Math.round((deliveredCount / session.decisionItems.length) * 100) : 0;
-  const timeTone = reroute ? 'danger' : remainingSeconds < 60 ? 'warning' : 'normal';
-  const visibleRerouteItems = useMemo(() => showOptionalInReroute ? remainingItems : remainingRequired, [remainingItems, remainingRequired, showOptionalInReroute]);
+  const readiness = requiredItems.length ? Math.round((deliveredRequiredCount / requiredItems.length) * 100) : 0;
+  const timeTone = priorityGuide ? 'warning' : 'normal';
+  const visibleItems = priorityGuide
+    ? [...session.decisionItems].sort((left, right) => Number(right.required && !right.delivered) - Number(left.required && !left.delivered) || left.slide - right.slide)
+    : session.decisionItems;
 
   return (
-    <div className={`presenter-shell ${reroute ? 'is-rerouting' : ''}`}>
+    <div className={`presenter-shell ${priorityGuide ? 'has-priority-guide' : ''}`}>
       <header className="presenter-header">
         <div className="brand-lockup brand-lockup--light"><div className="brand-mark"><span /></div><div><strong>REPORT NAVI</strong><small>LIVE GUIDANCE</small></div></div>
         <div className="live-destination"><span><Icon name="target" size={15}/> PURPOSE</span><strong>{session.objective}</strong></div>
-        <div className={`live-timer timer--${timeTone}`}><span>남은 시간</span><strong>{formatClock(remainingSeconds)}</strong><small>{reroute ? `필수 전달 예상 ${formatClock(remainingRequiredSeconds)}` : `목표 ${formatClock(session.timeLimitSeconds)}`}</small></div>
+        <div className="live-readiness"><span>의사결정 준비도</span><strong>{deliveredRequiredCount}<em>/ {requiredItems.length}</em></strong><small>{readiness}% · 필수 정보 기준</small></div>
+        {hasTimeGuide && <div className={`live-timer timer--${timeTone}`}><span>선택 시간 안내</span><strong>{formatClock(remainingSeconds)}</strong><small>{priorityGuide ? `필수 핵심 ${remainingRequired.length}개 우선` : '핵심 추적에는 영향 없음'}</small></div>}
         <a className="presenter-header-button" href={`${window.location.origin}${window.location.pathname}?view=presentation`} target="_blank" rel="noopener noreferrer" onClick={() => window.setTimeout(() => channelRef.current?.postMessage({ type: 'snapshot', payload: snapshotRef.current }), 450)}><Icon name="monitor" size={17}/> 프로젝터 화면 열기 <Icon name="external" size={14}/></a>
         <button className="presenter-end-button" type="button" onClick={() => { speech.stop(); onFinish(); }}><Icon name="stop" size={14}/> 보고 종료</button>
       </header>
 
-      {reroute && <div className="reroute-banner"><span><Icon name="route" size={17}/><strong>경로 재탐색</strong></span><p>남은 시간에는 필수 정보만 전달해야 목적지에 도착할 수 있습니다.</p><Badge tone="red">필수 {remainingRequired.length}개 남음</Badge></div>}
+      {priorityGuide && <div className="priority-banner"><span><Icon name="route" size={17}/><strong>우선 확인할 핵심</strong></span><p>선택한 종료시간이 가까워 미전달 필수 항목을 위에 표시합니다.</p><Badge tone="amber">필수 {remainingRequired.length}개 남음</Badge></div>}
       {toast && <div className="live-toast"><Icon name="alert" size={17}/>{toast}</div>}
 
       <main className="presenter-workspace">
@@ -166,36 +171,21 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
 
         <section className="guidance-panel">
           <div className="guidance-heading">
-            <div><span>{reroute ? 'REROUTED PATH' : 'REMAINING CORE'}</span><h2>{reroute ? '지금부터 이것만 전달하세요' : '아직 남은 핵심'}</h2></div>
-            <div className="completion-dial"><span style={{ '--progress': `${progress * 3.6}deg` } as React.CSSProperties}><b>{progress}%</b></span><small>{deliveredCount}/{session.decisionItems.length}</small></div>
+            <div><span>DECISION READINESS</span><h2>의사결정 준비도</h2><p>아직 남은 필수 핵심 {remainingRequired.length}개</p></div>
+            <div className="completion-dial"><span style={{ '--progress': `${readiness * 3.6}deg` } as React.CSSProperties}><b>{readiness}%</b></span><small>필수 {deliveredRequiredCount}/{requiredItems.length}</small></div>
           </div>
 
-          {reroute ? (
-            <div className="reroute-content">
-              <div className="reroute-lead"><Icon name="route" size={24}/><div><strong>{formatClock(remainingSeconds)} 남음</strong><p>선택 항목을 접고 미전달 필수 항목을 가까운 슬라이드 순으로 재배치했습니다.</p></div></div>
-              <div className="reroute-list">
-                {visibleRerouteItems.map((item, index) => (
-                  <button type="button" className="reroute-item" key={item.id} onClick={() => moveToSlide(item.slide)}>
-                    <span>{index + 1}</span><div><small>{DECISION_LABELS[item.type]} · SLIDE {item.slide}</small><strong>{item.title}</strong><p>{item.detail}</p></div><Icon name="arrow-right" size={17}/>
-                  </button>
-                ))}
-                {!visibleRerouteItems.length && <div className="all-complete"><Icon name="check" size={22}/><strong>필수 정보 전달을 완료했습니다</strong></div>}
-              </div>
-              {remainingItems.some((item) => !item.required) && <button className="optional-toggle" onClick={() => setShowOptionalInReroute((value) => !value)}>{showOptionalInReroute ? '선택 항목 다시 숨기기' : `생략 가능 ${remainingItems.filter((item) => !item.required).length}개 보기`} <Icon name="chevron-right" size={15}/></button>}
-            </div>
-          ) : (
-            <div className="remaining-list">
-              {session.decisionItems.map((item) => (
-                <button type="button" className={`remaining-item ${item.delivered ? 'is-delivered' : ''} ${item.required ? 'is-required' : ''}`} key={item.id} onClick={() => toggleItem(item.id)}>
-                  <span className="check-box">{item.delivered && <Icon name="check" size={14}/>}</span>
-                  <div><span><Badge tone={item.required ? 'blue' : 'neutral'}>{item.required ? '필수' : '선택'}</Badge><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>SLIDE {item.slide}</small></span><strong>{item.title}</strong></div>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="remaining-list">
+            {visibleItems.map((item) => (
+              <button type="button" className={`remaining-item ${item.delivered ? 'is-delivered' : ''} ${item.required ? 'is-required' : ''}`} key={item.id} onClick={() => toggleItem(item.id)}>
+                <span className="check-box">{item.delivered && <Icon name="check" size={14}/>}</span>
+                <div><span><Badge tone={item.required ? 'blue' : 'neutral'}>{item.required ? '필수' : '선택'}</Badge><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>SLIDE {item.slide}</small></span><strong>{item.title}</strong></div>
+              </button>
+            ))}
+          </div>
 
           <div className="next-core-card">
-            <div><span><Icon name="target" size={15}/> NEXT CORE</span><strong>{nextItem ? nextItem.title : '필수 정보 전달 완료'}</strong><p>{nextItem ? `이 내용을 설명하세요. 관련 자료: Slide ${nextItem.slide}` : '이제 최종 요청과 보고 목적지를 확인하세요.'}</p></div>
+            <div><span><Icon name="target" size={15}/> NEXT CORE</span><strong>{nextItem ? nextItem.title : '필수 정보 전달 완료'}</strong><p>{nextItem ? `관련 자료: Slide ${nextItem.slide}` : '의사결정에 필요한 필수 정보가 모두 전달되었습니다.'}</p></div>
             {nextItem && <button type="button" onClick={() => moveToSlide(nextItem.slide)}>다음 핵심 <Icon name="arrow-right" size={16}/></button>}
           </div>
         </section>
@@ -217,7 +207,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
       {debugOpen && <div className="transcript-debug"><div><span>LIVE TRANSCRIPT</span><button onClick={() => setDebugOpen(false)}><Icon name="x" size={16}/></button></div><pre>{session.transcript || '아직 확정된 발화가 없습니다.'}{speech.interimTranscript && `\n[interim] ${speech.interimTranscript}`}</pre></div>}
       {evidenceOpen && <><div className="drawer-scrim" onClick={() => setEvidenceOpen(false)}/><EvidenceDrawer slides={slides} onClose={() => setEvidenceOpen(false)} onSearch={() => setSession((current) => ({ ...current, evidenceSearchCount: current.evidenceSearchCount + 1 }))} onMove={(slide) => { moveToSlide(slide); setEvidenceOpen(false); }}/></>}
 
-      {session.demoMode && <div className="demo-controls"><span><Icon name="spark" size={14}/> DEMO CONTROL</span><button onClick={() => submitManual('최대 냉각부하는 106.2킬로와트입니다')}>106.2kW 발화</button><button onClick={setDemoScenario}>리스크·요청만 남기기</button><button onClick={setThirtySeconds}>남은 시간 30초</button></div>}
+      {session.demoMode && <div className="demo-controls"><span><Icon name="spark" size={14}/> DEMO CONTROL</span><small>공사비 증가를 말하지 않고 Slide 5를 넘겨 보세요.</small><button onClick={() => submitManual('최대 냉각부하는 106.2킬로와트입니다')}>106.2kW 발화</button><button onClick={setDemoScenario}>리스크·요청만 남기기</button><button onClick={setThirtySeconds}>선택 시간 30초</button></div>}
     </div>
   );
 }

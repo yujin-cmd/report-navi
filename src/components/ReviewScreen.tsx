@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { DEMO_QUESTIONS } from '../data/demo';
-import { generateExpectedQuestions } from '../lib/report';
+import { decisionMatchScore, generateExpectedQuestions } from '../lib/report';
 import { DECISION_LABELS, type AppStep, type DecisionItem, type DecisionType, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
-export function ReviewScreen({ session, onStart, onStepBack }: { session: ReportSession; onStart: (items: DecisionItem[]) => void; onStepBack: (step: AppStep) => void }) {
+export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }: { session: ReportSession; onStart: (items: DecisionItem[]) => void; onStepNavigate: (step: AppStep) => void; furthestStep: AppStep }) {
   const [items, setItems] = useState(session.decisionItems);
   const [questionOpen, setQuestionOpen] = useState(true);
+  const [activeQuestion, setActiveQuestion] = useState(0);
+  const [simulationAnswer, setSimulationAnswer] = useState('');
+  const [simulationFeedback, setSimulationFeedback] = useState<{ covered: boolean; message: string; slide?: number } | null>(null);
   const requiredCount = items.filter((item) => item.required).length;
   const optionalCount = items.length - requiredCount;
   const estimatedSeconds = items.reduce((total, item) => total + item.estimatedSeconds, 0);
@@ -38,10 +41,28 @@ export function ReviewScreen({ session, onStart, onStepBack }: { session: Report
     }]);
   }
 
+  function checkSimulationAnswer() {
+    const answer = simulationAnswer.trim();
+    if (!answer) {
+      setSimulationFeedback({ covered: false, message: '답변을 입력하면 근거와 전제의 포함 여부만 확인합니다.' });
+      return;
+    }
+    const question = expectedQuestions[activeQuestion] || expectedQuestions[0];
+    const focusItem = [...items].sort((left, right) => decisionMatchScore(question, right) - decisionMatchScore(question, left))[0];
+    if (!focusItem) {
+      setSimulationFeedback({ covered: false, message: '확인할 Decision Set 항목이 없습니다.' });
+      return;
+    }
+    const score = decisionMatchScore(answer, focusItem);
+    setSimulationFeedback(score >= 0.32
+      ? { covered: true, message: `“${focusItem.title}” 핵심이 답변에 포함되었습니다. 문장 작성이나 답변 평가는 수행하지 않습니다.`, slide: focusItem.slide }
+      : { covered: false, message: `“${focusItem.title}” 관련 근거가 답변에 포함되지 않았습니다. Slide ${focusItem.slide}의 원문을 확인하세요.`, slide: focusItem.slide });
+  }
+
   return (
-    <PageShell step="review" onStepBack={onStepBack}>
+    <PageShell step="review" onStepNavigate={onStepNavigate} furthestStep={furthestStep}>
       <div className="page-title-row review-title-row">
-        <div><span className="eyebrow"><Icon name="spark" size={15}/> DECISION SET</span><h1>보고 전 기준을 확정하세요</h1><p>AI가 제안한 항목을 검토하고, 실제 보고에서 반드시 전달할 정보를 선택합니다.</p></div>
+        <div><span className="eyebrow"><Icon name="spark" size={15}/> DECISION SET</span><h1>보고 전 기준을 확정하세요</h1><p>{session.demoMode ? '샘플 분석이 제안한' : '로컬 기본 분석이 제안한'} 핵심 항목입니다. 보고 전 직접 검토해 주세요.</p></div>
         <button type="button" className="button button--secondary" onClick={addItem}><Icon name="plus" size={17}/> 새 항목 추가</button>
       </div>
 
@@ -49,7 +70,7 @@ export function ReviewScreen({ session, onStart, onStepBack }: { session: Report
         <div><small>필수 항목</small><strong>{requiredCount}<em>개</em></strong></div>
         <div><small>선택 항목</small><strong>{optionalCount}<em>개</em></strong></div>
         <div><small>예상 전달시간</small><strong>{Math.floor(estimatedSeconds / 60)}:{String(estimatedSeconds % 60).padStart(2, '0')}</strong></div>
-        <div><small>보고 제한시간</small><strong>{Math.floor(session.timeLimitSeconds / 60)}:00</strong></div>
+        {(session.timeLimitSeconds || session.meetingEndAt) && <div><small>선택 시간 안내</small><strong>{session.timeLimitSeconds ? `${Math.floor(session.timeLimitSeconds / 60)}분` : '회의 종료'}</strong></div>}
         <div className="summary-destination"><span><Icon name="target" size={17}/> 목적지</span><strong>{session.objective}</strong></div>
       </section>
 
@@ -85,7 +106,7 @@ export function ReviewScreen({ session, onStart, onStepBack }: { session: Report
             ['5개 유형이 모두 있는가', Object.values(grouped).every((group) => group.length > 0)],
             ['필수 항목이 지정됐는가', requiredCount > 0],
             ['최종 요청이 포함됐는가', grouped.request.length > 0],
-            ['예상시간이 제한 내인가', estimatedSeconds <= session.timeLimitSeconds],
+            ...(session.timeLimitSeconds ? [['예상시간이 목표시간 내인가', estimatedSeconds <= session.timeLimitSeconds] as [string, boolean]] : []),
           ].map(([label, checked]) => <div className="check-row" key={String(label)}><span className={checked ? 'checked' : ''}>{checked && <Icon name="check" size={13}/>}</span><strong>{label}</strong></div>)}</div>
 
           <div className="question-panel">
@@ -96,6 +117,28 @@ export function ReviewScreen({ session, onStart, onStepBack }: { session: Report
           <div className="review-principle"><Icon name="alert" size={17}/><p><strong>최종 책임은 보고자에게 있습니다.</strong>자동 추출 결과는 실전 전에 반드시 확인하세요.</p></div>
         </aside>
       </div>
+
+      <section className="review-simulation" aria-labelledby="simulation-title">
+        <div className="section-heading">
+          <div><span>REVIEW SIMULATION</span><h2 id="simulation-title">검토 시뮬레이션</h2><p>상급자나 발주처의 질문을 선택하고 답해 보세요. Report Navi는 답변을 대신 만들지 않고 빠진 근거만 확인합니다.</p></div>
+          <Badge tone="blue">선택 기능</Badge>
+        </div>
+        <div className="simulation-grid">
+          <div className="simulation-questions">
+            {expectedQuestions.map((question, index) => (
+              <button type="button" className={index === activeQuestion ? 'active' : ''} key={question} onClick={() => { setActiveQuestion(index); setSimulationAnswer(''); setSimulationFeedback(null); }}>
+                <span>Q{index + 1}</span><strong>{question}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="simulation-answer">
+            <label htmlFor="simulation-answer">내 답변</label>
+            <textarea id="simulation-answer" rows={5} value={simulationAnswer} onChange={(event) => setSimulationAnswer(event.target.value)} placeholder="답변할 내용을 직접 입력하세요." />
+            <div className="simulation-actions"><small>내용의 완결성만 확인하며 표현이나 말하기를 평가하지 않습니다.</small><button className="button button--secondary" type="button" onClick={checkSimulationAnswer}>빠진 근거 확인</button></div>
+            {simulationFeedback && <div className={`simulation-feedback ${simulationFeedback.covered ? 'is-covered' : 'is-missing'}`}><Icon name={simulationFeedback.covered ? 'check' : 'alert'} size={17}/><p>{simulationFeedback.message}</p></div>}
+          </div>
+        </div>
+      </section>
 
       <div className="sticky-actionbar"><div><span className="ready-dot"/><p><strong>보고 준비 완료</strong><small>마이크 권한이 없어도 텍스트 입력으로 전체 흐름을 시연할 수 있습니다.</small></p></div><button className="button button--primary button--large" onClick={() => onStart(items)} disabled={!items.length || requiredCount === 0}><Icon name="play" size={18}/> 보고 시작</button></div>
     </PageShell>

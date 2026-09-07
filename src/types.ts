@@ -35,13 +35,14 @@ export interface ReportSession {
   title: string;
   objectiveType: string;
   objective: string;
-  timeLimitSeconds: number;
+  timeLimitSeconds?: number;
+  meetingEndAt?: string;
   startedAt?: number;
   endedAt?: number;
   currentSlide: number;
   decisionItems: DecisionItem[];
   transcript: string;
-  rerouteCount: number;
+  priorityGuideCount: number;
   evidenceSearchCount: number;
   manualOverrideCount: number;
   demoMode: boolean;

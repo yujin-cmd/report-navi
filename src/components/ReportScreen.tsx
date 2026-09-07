@@ -3,7 +3,7 @@ import { formatClock } from '../lib/report';
 import { DECISION_LABELS, type AppStep, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
-export function ReportScreen({ session, onRestart, onReview, onStepBack }: { session: ReportSession; onRestart: () => void; onReview: () => void; onStepBack: (step: AppStep) => void }) {
+export function ReportScreen({ session, onRestart, onReview, onStepNavigate, furthestStep }: { session: ReportSession; onRestart: () => void; onReview: () => void; onStepNavigate: (step: AppStep) => void; furthestStep: AppStep }) {
   const required = session.decisionItems.filter((item) => item.required);
   const optional = session.decisionItems.filter((item) => !item.required);
   const requiredDelivered = required.filter((item) => item.delivered).length;
@@ -14,17 +14,24 @@ export function ReportScreen({ session, onRestart, onReview, onStepBack }: { ses
 
   useEffect(() => {
     try {
-      localStorage.setItem('report-navi:last-report', JSON.stringify({ ...session, actualSeconds, completion }));
+      const safeReport = {
+        ...session,
+        transcript: '',
+        decisionItems: session.decisionItems.map(({ sourceText: _sourceText, ...item }) => item),
+        actualSeconds,
+        completion,
+      };
+      localStorage.setItem('report-navi:last-report', JSON.stringify(safeReport));
     } catch {
       // The app remains usable when storage is unavailable.
     }
   }, [actualSeconds, completion, session]);
 
   return (
-    <PageShell step="report" onStepBack={onStepBack}>
+    <PageShell step="report" onStepNavigate={onStepNavigate} furthestStep={furthestStep}>
       <section className="report-hero">
         <div><span className="eyebrow"><Icon name="target" size={15}/> ARRIVAL REPORT</span><h1>도착 리포트</h1><p>이번 보고에서 의사결정에 필요한 정보가 어디까지 전달됐는지 정리했습니다.</p></div>
-        <div className="report-grade"><div style={{ '--progress': `${completion * 3.6}deg` } as React.CSSProperties}><span><strong>{completion}</strong><em>%</em><small>필수 전달률</small></span></div><p>{completion === 100 ? '목적지 도착' : '보완 필요'}</p></div>
+        <div className="report-grade"><div style={{ '--progress': `${completion * 3.6}deg` } as React.CSSProperties}><span><strong>{completion}</strong><em>%</em><small>의사결정 준비도</small></span></div><p>{completion === 100 ? '필수 정보 전달 완료' : '보완 필요'}</p></div>
       </section>
 
       <div className="report-destination"><span><Icon name="target" size={18}/> 이번 보고의 목적지</span><strong>{session.objective}</strong><Badge tone={completion === 100 ? 'green' : 'amber'}>{completion === 100 ? '완결' : `${missed.length}개 미전달`}</Badge></div>
@@ -32,9 +39,9 @@ export function ReportScreen({ session, onRestart, onReview, onStepBack }: { ses
       <section className="report-kpis">
         <div><span>필수 정보 전달</span><strong>{requiredDelivered}<em>/ {required.length}</em></strong><small>{missed.length ? `${missed.length}개 보완 필요` : '모든 필수 정보 전달'}</small></div>
         <div><span>선택 정보 전달</span><strong>{optionalDelivered}<em>/ {optional.length}</em></strong><small>선택 항목은 완결률에 미반영</small></div>
-        <div><span>목표 / 실제시간</span><strong>{formatClock(session.timeLimitSeconds)}</strong><small>실제 {formatClock(actualSeconds)}</small></div>
-        <div><span>경로 재탐색</span><strong>{session.rerouteCount}<em>회</em></strong><small>시간 부족 자동 감지</small></div>
-        <div><span>Q&A 근거 탐색</span><strong>{session.evidenceSearchCount}<em>건</em></strong><small>Evidence Navi 기록</small></div>
+        {(session.timeLimitSeconds || session.meetingEndAt) && <div><span>선택 시간 정보</span><strong>{session.timeLimitSeconds ? formatClock(session.timeLimitSeconds) : '회의 종료'}</strong><small>실제 보고 {formatClock(actualSeconds)}</small></div>}
+        {(session.timeLimitSeconds || session.meetingEndAt) && <div><span>시간 기반 우선 안내</span><strong>{session.priorityGuideCount}<em>회</em></strong><small>필수 항목 우선 표시</small></div>}
+        <div><span>질의응답 근거 탐색</span><strong>{session.evidenceSearchCount}<em>건</em></strong><small>Evidence Navi 사용 기록</small></div>
         <div><span>수동 상태 수정</span><strong>{session.manualOverrideCount}<em>회</em></strong><small>보고자 최종 통제</small></div>
       </section>
 

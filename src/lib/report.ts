@@ -85,7 +85,7 @@ export function getRemainingRequiredSeconds(items: DecisionItem[]): number {
     .reduce((total, item) => total + item.estimatedSeconds, 0);
 }
 
-export function shouldReroute(remainingSeconds: number, items: DecisionItem[], safetyBuffer = 12): boolean {
+export function shouldPrioritize(remainingSeconds: number, items: DecisionItem[], safetyBuffer = 12): boolean {
   const requiredSeconds = getRemainingRequiredSeconds(items);
   return requiredSeconds > 0 && remainingSeconds < requiredSeconds + safetyBuffer;
 }

@@ -124,7 +124,7 @@ export function UploadScreen({ session, slides, onSlidesChange, onReady, onStepN
         <section className="slide-preview-section">
           <div className="section-heading"><div><span>PAGE PREVIEW</span><h2>페이지 미리보기</h2></div><Badge tone="green">{slides.length} pages ready</Badge></div>
           <div className="thumbnail-strip">
-            {slides.map((slide) => <div className="thumbnail-card" key={slide.page}><div><SlideCanvas slide={slide} compact/></div><span>Slide {slide.page}</span></div>)}
+            {slides.map((slide) => <div className="thumbnail-card" key={slide.page}><div><SlideCanvas slide={slide} compact/></div><span>Page {slide.page}</span></div>)}
           </div>
           <div className="upload-actionbar"><div><Icon name="check" size={18}/><span><strong>텍스트 추출 완료</strong><small>다음 단계에서 항목을 직접 수정할 수 있습니다.</small></span></div><button className="button button--primary" type="button" onClick={generate} disabled={isLoading}>Decision Set 생성 <Icon name="arrow-right"/></button></div>
         </section>

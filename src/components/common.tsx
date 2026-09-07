@@ -39,17 +39,16 @@ export function Icon({ name, size = 18, strokeWidth = 1.8 }: { name: IconName; s
 }
 
 const STEPS: Array<{ key: AppStep; label: string }> = [
-  { key: 'setup', label: '목적지' },
-  { key: 'upload', label: '자료 분석' },
-  { key: 'review', label: 'Decision Set' },
-  { key: 'presenter', label: '실시간 보고' },
+  { key: 'setup', label: '목적 설정' },
+  { key: 'upload', label: '자료 준비' },
+  { key: 'review', label: '기준 검토' },
+  { key: 'presenter', label: '실시간 추적' },
   { key: 'report', label: '도착 리포트' },
 ];
 
 export function AppHeader({ step, onStepNavigate, furthestStep = step }: { step: AppStep; onStepNavigate?: (step: AppStep) => void; furthestStep?: AppStep }) {
   const activeIndex = STEPS.findIndex((item) => item.key === step);
   const furthestIndex = STEPS.findIndex((item) => item.key === furthestStep);
-  const presenterIndex = STEPS.findIndex((item) => item.key === 'presenter');
   return (
     <header className="app-header">
       <div className="brand-lockup">
@@ -58,9 +57,9 @@ export function AppHeader({ step, onStepNavigate, furthestStep = step }: { step:
       </div>
       <nav className="step-nav" aria-label="진행 단계">
         {STEPS.map((item, index) => {
-          const isReached = index <= furthestIndex && index < presenterIndex;
-          const isComplete = index < activeIndex || (isReached && index !== activeIndex);
-          const canNavigate = Boolean(onStepNavigate) && activeIndex < presenterIndex && isReached && index !== activeIndex;
+          const isReached = index <= furthestIndex;
+          const isComplete = index < activeIndex;
+          const canNavigate = Boolean(onStepNavigate) && isReached && index !== activeIndex;
           const isForward = canNavigate && index > activeIndex;
           const className = `step-item ${index === activeIndex ? 'active' : ''} ${isComplete ? 'complete' : ''} ${canNavigate ? 'step-item--clickable' : ''} ${isForward ? 'step-item--forward' : ''}`;
           const content = <><span>{isComplete ? <Icon name="check" size={13}/> : index + 1}</span><em>{item.label}</em></>;

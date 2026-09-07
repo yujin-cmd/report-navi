@@ -10,6 +10,21 @@ interface EvidenceDrawerProps {
   onMove: (slide: number) => void;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const terms = Array.from(new Set(query.match(/[0-9]+(?:\.[0-9]+)?|[A-Za-z가-힣]{2,}/g) || []))
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 8);
+  if (!terms.length) return <>{text}</>;
+
+  const exactTerms = new Set(terms.map((term) => term.toLocaleLowerCase()));
+  const parts = text.split(new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi'));
+  return <>{parts.map((part, index) => exactTerms.has(part.toLocaleLowerCase()) ? <mark key={`${part}-${index}`}>{part}</mark> : part)}</>;
+}
+
 export function EvidenceDrawer({ slides, onClose, onSearch, onMove }: EvidenceDrawerProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<EvidenceResult[]>([]);
@@ -30,7 +45,7 @@ export function EvidenceDrawer({ slides, onClose, onSearch, onMove }: EvidenceDr
         <div><span>EVIDENCE NAVI</span><h2>답변이 아닌 근거를 찾습니다</h2></div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="닫기"><Icon name="x"/></button>
       </div>
-      <p className="drawer-description">질문과 가장 가까운 슬라이드·수치·준비된 키워드만 안내합니다.</p>
+      <p className="drawer-description">질문과 가장 가까운 페이지·수치·준비된 키워드만 안내합니다.</p>
       <form className="evidence-search" onSubmit={(event) => { event.preventDefault(); runSearch(); }}>
         <Icon name="search" size={18}/>
         <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 106kW라는 수치는 어디서 나왔습니까?"/>
@@ -43,10 +58,10 @@ export function EvidenceDrawer({ slides, onClose, onSearch, onMove }: EvidenceDr
         {searched && !results.length && <div className="evidence-empty"><div><Icon name="alert" size={24}/></div><strong>직접 연결되는 근거를 찾지 못했습니다</strong><p>수치나 설비명처럼 구체적인 키워드로 다시 검색해 보세요.</p></div>}
         {results.map((result, index) => (
           <article className="evidence-result" key={`${result.slide}-${index}`}>
-            <div><Badge tone={index === 0 ? 'blue' : 'neutral'}>{index === 0 ? '가장 관련 높음' : '관련 자료'}</Badge><span>SLIDE {result.slide}</span></div>
-            <h3>{result.title}</h3>
-            <p>{result.excerpt}</p>
-            <button type="button" onClick={() => onMove(result.slide)}>Slide {result.slide}로 이동 <Icon name="arrow-right" size={16}/></button>
+            <div><Badge tone={index === 0 ? 'blue' : 'neutral'}>{index === 0 ? '가장 관련 높음' : '관련 자료'}</Badge><span>PAGE {result.slide}</span></div>
+            <h3><HighlightedText text={result.title} query={query}/></h3>
+            <p><HighlightedText text={result.excerpt} query={query}/></p>
+            <button type="button" onClick={() => onMove(result.slide)}>Page {result.slide} 원문 보기 <Icon name="arrow-right" size={16}/></button>
           </article>
         ))}
       </div>

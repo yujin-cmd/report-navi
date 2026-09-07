@@ -30,17 +30,12 @@ function initialStep(session: ReportSession): AppStep {
   return 'setup';
 }
 
-const PRE_REPORT_STEPS: AppStep[] = ['setup', 'upload', 'review'];
-
-function furthestPreReportStep(step: AppStep): AppStep {
-  const index = PRE_REPORT_STEPS.indexOf(step);
-  return index >= 0 ? step : 'review';
-}
+const STEP_ORDER: AppStep[] = ['setup', 'upload', 'review', 'presenter', 'report'];
 
 export default function App() {
   const [session, setSession] = useState<ReportSession>(() => loadDraft());
   const [step, setStep] = useState<AppStep>(() => initialStep(loadDraft()));
-  const [furthestStep, setFurthestStep] = useState<AppStep>(() => furthestPreReportStep(initialStep(loadDraft())));
+  const [furthestStep, setFurthestStep] = useState<AppStep>(() => initialStep(loadDraft()));
   const [slides, setSlides] = useState<SlideData[]>(() => loadDraft().demoMode ? DEMO_SLIDES.map((slide) => ({ ...slide })) : []);
   const projectorMode = new URLSearchParams(window.location.search).get('view') === 'presentation';
 
@@ -71,7 +66,7 @@ export default function App() {
       || next.timeLimitSeconds !== session.timeLimitSeconds
       || next.meetingEndAt !== session.meetingEndAt;
     setSession(destinationChanged ? { ...next, decisionItems: [] } : next);
-    setFurthestStep((current) => destinationChanged || PRE_REPORT_STEPS.indexOf(current) < 1 ? 'upload' : current);
+    setFurthestStep((current) => destinationChanged || STEP_ORDER.indexOf(current) < 1 ? 'upload' : current);
     setStep('upload');
   }
 
@@ -99,6 +94,7 @@ export default function App() {
       evidenceSearchCount: 0,
       manualOverrideCount: 0,
     }));
+    setFurthestStep((current) => STEP_ORDER.indexOf(current) < STEP_ORDER.indexOf('presenter') ? 'presenter' : current);
     setStep('presenter');
   }
 
@@ -116,6 +112,7 @@ export default function App() {
 
   function finishReport() {
     setSession((current) => ({ ...current, endedAt: Date.now() }));
+    setFurthestStep('report');
     setStep('report');
   }
 
@@ -133,9 +130,9 @@ export default function App() {
   }
 
   function navigateToReachedStep(target: AppStep) {
-    const targetIndex = PRE_REPORT_STEPS.indexOf(target);
-    const furthestIndex = PRE_REPORT_STEPS.indexOf(furthestStep);
-    const currentIndex = PRE_REPORT_STEPS.indexOf(step);
+    const targetIndex = STEP_ORDER.indexOf(target);
+    const furthestIndex = STEP_ORDER.indexOf(furthestStep);
+    const currentIndex = STEP_ORDER.indexOf(step);
     const canNavigate = currentIndex >= 0 && targetIndex >= 0 && targetIndex <= furthestIndex && target !== step;
     if (canNavigate) setStep(target);
   }

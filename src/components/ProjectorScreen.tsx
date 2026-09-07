@@ -26,7 +26,7 @@ export function ProjectorScreen() {
   const active = snapshot.slides.find((slide) => slide.page === snapshot.currentSlide) || snapshot.slides[0];
   return (
     <div className="projector-shell">
-      <header><div className="projector-logo"><span/><strong>REPORT NAVI</strong></div><p>{snapshot.title}</p><span>SLIDE {snapshot.currentSlide} / {snapshot.slides.length}</span></header>
+      <header><div className="projector-logo"><span/><strong>REPORT NAVI</strong></div><p>{snapshot.title}</p><span>PAGE {snapshot.currentSlide} / {snapshot.slides.length}</span></header>
       <main>{active && <SlideCanvas slide={active}/>}</main>
       <footer><span>{snapshot.objective}</span><small>← → 키로 페이지 이동</small></footer>
     </div>

@@ -4,9 +4,13 @@ import { decisionMatchScore, generateExpectedQuestions } from '../lib/report';
 import { DECISION_LABELS, type AppStep, type DecisionItem, type DecisionType, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
+type ReviewFilter = 'required' | 'all' | DecisionType;
+
 export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }: { session: ReportSession; onStart: (items: DecisionItem[]) => void; onStepNavigate: (step: AppStep) => void; furthestStep: AppStep }) {
   const [items, setItems] = useState(session.decisionItems);
   const [questionOpen, setQuestionOpen] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<ReviewFilter>('required');
+  const [editingIds, setEditingIds] = useState<Set<string>>(() => new Set());
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [simulationAnswer, setSimulationAnswer] = useState('');
   const [simulationFeedback, setSimulationFeedback] = useState<{ covered: boolean; message: string; slide?: number } | null>(null);
@@ -18,6 +22,13 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
     (Object.keys(DECISION_LABELS) as DecisionType[]).forEach((type) => { result[type] = items.filter((item) => item.type === type); });
     return result;
   }, [items]);
+  const visibleGrouped = useMemo(() => {
+    const result = {} as Record<DecisionType, DecisionItem[]>;
+    (Object.keys(DECISION_LABELS) as DecisionType[]).forEach((type) => {
+      result[type] = grouped[type].filter((item) => activeFilter === 'all' || (activeFilter === 'required' && item.required) || activeFilter === type);
+    });
+    return result;
+  }, [activeFilter, grouped]);
   const expectedQuestions = useMemo(
     () => session.demoMode ? DEMO_QUESTIONS : generateExpectedQuestions(items, session.objective),
     [items, session.demoMode, session.objective],
@@ -28,8 +39,9 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
   }
 
   function addItem() {
+    const id = `manual-${Date.now()}`;
     setItems((current) => [...current, {
-      id: `manual-${Date.now()}`,
+      id,
       type: 'evidence',
       title: '새 핵심 항목',
       detail: '보고 전에 내용을 구체화해 주세요.',
@@ -39,6 +51,17 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
       variants: [],
       delivered: false,
     }]);
+    setActiveFilter('all');
+    setEditingIds((current) => new Set(current).add(id));
+  }
+
+  function toggleEditing(id: string) {
+    setEditingIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function checkSimulationAnswer() {
@@ -56,7 +79,7 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
     const score = decisionMatchScore(answer, focusItem);
     setSimulationFeedback(score >= 0.32
       ? { covered: true, message: `“${focusItem.title}” 핵심이 답변에 포함되었습니다. 문장 작성이나 답변 평가는 수행하지 않습니다.`, slide: focusItem.slide }
-      : { covered: false, message: `“${focusItem.title}” 관련 근거가 답변에 포함되지 않았습니다. Slide ${focusItem.slide}의 원문을 확인하세요.`, slide: focusItem.slide });
+      : { covered: false, message: `“${focusItem.title}” 관련 근거가 답변에 포함되지 않았습니다. Page ${focusItem.slide}의 원문을 확인하세요.`, slide: focusItem.slide });
   }
 
   return (
@@ -74,29 +97,40 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
         <div className="summary-destination"><span><Icon name="target" size={17}/> 목적지</span><strong>{session.objective}</strong></div>
       </section>
 
+      <nav className="decision-filter" aria-label="Decision Set 필터">
+        {([
+          ['required', `필수 ${requiredCount}`],
+          ['all', `전체 ${items.length}`],
+          ...Object.entries(DECISION_LABELS),
+        ] as Array<[ReviewFilter, string]>).map(([value, label]) => (
+          <button type="button" className={activeFilter === value ? 'active' : ''} aria-pressed={activeFilter === value} key={value} onClick={() => setActiveFilter(value)}>{label}</button>
+        ))}
+      </nav>
+
       <div className="review-layout">
         <div className="decision-groups">
-          {(Object.keys(DECISION_LABELS) as DecisionType[]).map((type) => (
+          {(Object.keys(DECISION_LABELS) as DecisionType[]).filter((type) => visibleGrouped[type].length > 0 || activeFilter === type).map((type) => (
             <section className={`decision-group type-${type}`} key={type}>
-              <div className="decision-group-heading"><span className="type-dot"/><h2>{DECISION_LABELS[type]}</h2><Badge>{grouped[type].length}</Badge><small>{type === 'conclusion' ? '최종 제안·판단' : type === 'evidence' ? '수치·계산·비교' : type === 'assumption' ? '조건·가정' : type === 'risk' ? '영향·제약' : '최종 행동'}</small></div>
-              {grouped[type].length === 0 && <div className="empty-decision">이 유형의 항목이 없습니다.</div>}
-              {grouped[type].map((item) => (
-                <article className="decision-editor" key={item.id}>
+              <div className="decision-group-heading"><span className="type-dot"/><h2>{DECISION_LABELS[type]}</h2><Badge>{visibleGrouped[type].length}</Badge><small>{type === 'conclusion' ? '최종 제안·판단' : type === 'evidence' ? '수치·계산·비교' : type === 'assumption' ? '조건·가정' : type === 'risk' ? '영향·제약' : '최종 행동'}</small></div>
+              {visibleGrouped[type].length === 0 && <div className="empty-decision">이 유형의 항목이 없습니다.</div>}
+              {visibleGrouped[type].map((item) => {
+                const isEditing = editingIds.has(item.id);
+                return <article className={`decision-editor ${isEditing ? 'is-editing' : ''}`} key={item.id}>
                   <button type="button" className={`required-toggle ${item.required ? 'is-required' : ''}`} onClick={() => update(item.id, { required: !item.required })} aria-pressed={item.required}>
                     <span>{item.required && <Icon name="check" size={13}/>}</span>{item.required ? '필수' : '선택'}
                   </button>
-                  <div className="editor-content">
+                  {isEditing ? <div className="editor-content">
                     <input className="editor-title" aria-label={`${DECISION_LABELS[item.type]} 항목 제목`} value={item.title} onChange={(event) => update(item.id, { title: event.target.value })}/>
                     <textarea rows={2} aria-label={`${DECISION_LABELS[item.type]} 항목 상세 내용`} value={item.detail} onChange={(event) => update(item.id, { detail: event.target.value })}/>
                     <div className="editor-meta">
                       <label>유형<select value={item.type} onChange={(event) => update(item.id, { type: event.target.value as DecisionType })}>{Object.entries(DECISION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                      <label>Slide <input type="number" min={1} value={item.slide} onChange={(event) => update(item.id, { slide: Number(event.target.value) })}/></label>
+                      <label>Page <input type="number" min={1} value={item.slide} onChange={(event) => update(item.id, { slide: Number(event.target.value) })}/></label>
                       <label>예상 <input type="number" min={5} max={180} value={item.estimatedSeconds} onChange={(event) => update(item.id, { estimatedSeconds: Number(event.target.value) })}/><em>초</em></label>
                     </div>
-                  </div>
-                  <button type="button" className="icon-button danger" onClick={() => setItems((current) => current.filter((candidate) => candidate.id !== item.id))} aria-label={`${item.title} 삭제`}><Icon name="trash" size={17}/></button>
-                </article>
-              ))}
+                  </div> : <div className="editor-summary"><strong>{item.title}</strong><p>{item.detail}</p><small>PAGE {item.slide}</small></div>}
+                  <div className="editor-actions"><button type="button" className="icon-button" onClick={() => toggleEditing(item.id)} aria-label={`${item.title} ${isEditing ? '편집 완료' : '수정'}`} title={isEditing ? '편집 완료' : '수정'}><Icon name={isEditing ? 'check' : 'edit'} size={17}/></button><button type="button" className="icon-button danger" onClick={() => setItems((current) => current.filter((candidate) => candidate.id !== item.id))} aria-label={`${item.title} 삭제`} title="삭제"><Icon name="trash" size={17}/></button></div>
+                </article>;
+              })}
             </section>
           ))}
         </div>

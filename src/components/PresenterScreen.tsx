@@ -18,6 +18,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [manualText, setManualText] = useState('');
+  const [showAllItems, setShowAllItems] = useState(false);
   const warnedRef = useRef(new Set<string>());
   const priorityGuideActiveRef = useRef(false);
   const toastTimerRef = useRef<number>();
@@ -140,12 +141,24 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
 
   const readiness = requiredItems.length ? Math.round((deliveredRequiredCount / requiredItems.length) * 100) : 0;
   const timeTone = priorityGuide ? 'warning' : 'normal';
-  const visibleItems = priorityGuide
-    ? [...session.decisionItems].sort((left, right) => Number(right.required && !right.delivered) - Number(left.required && !left.delivered) || left.slide - right.slide)
-    : session.decisionItems;
+  const secondaryItems = session.decisionItems.filter((item) => item.delivered || !item.required);
+  const hiddenRequiredCount = Math.max(0, remainingRequired.length - 3);
+  const visibleItems = showAllItems ? [...remainingRequired, ...secondaryItems] : remainingRequired.slice(0, 3);
+  const hiddenItemCount = hiddenRequiredCount + secondaryItems.length;
+  const collapsedListLabel = [
+    hiddenRequiredCount ? `남은 필수 ${hiddenRequiredCount}개` : '',
+    secondaryItems.length ? `완료·선택 ${secondaryItems.length}개` : '',
+  ].filter(Boolean).join(' · ');
+  const nextAction = nextItem ? ({
+    conclusion: '결론과 선택 이유를 설명하세요.',
+    evidence: '핵심 수치의 근거를 설명하세요.',
+    assumption: '적용한 전제조건을 설명하세요.',
+    risk: '리스크와 대응 방안을 설명하세요.',
+    request: '필요한 결정을 요청하세요.',
+  } as const)[nextItem.type] : '필수 정보 전달이 완료되었습니다.';
 
   return (
-    <div className={`presenter-shell ${priorityGuide ? 'has-priority-guide' : ''}`}>
+    <div className={`presenter-shell ${priorityGuide ? 'has-priority-guide' : ''} ${session.demoMode ? 'is-demo' : ''}`}>
       <header className="presenter-header">
         <div className="brand-lockup brand-lockup--light"><div className="brand-mark"><span /></div><div><strong>REPORT NAVI</strong><small>LIVE GUIDANCE</small></div></div>
         <div className="live-destination"><span><Icon name="target" size={15}/> PURPOSE</span><strong>{session.objective}</strong></div>
@@ -160,11 +173,11 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
 
       <main className="presenter-workspace">
         <section className="live-slide-panel">
-          <div className="live-panel-heading"><div><span>CURRENT MATERIAL</span><strong>Slide {session.currentSlide} / {slides.length}</strong></div><Badge tone="blue">발표 자료</Badge></div>
+          <div className="live-panel-heading"><div><span>CURRENT MATERIAL</span><strong>Page {session.currentSlide} / {slides.length}</strong></div><Badge tone="blue">보고 자료</Badge></div>
           <div className="live-slide-stage">{activeSlide ? <SlideCanvas slide={activeSlide}/> : <div className="missing-slide">표시할 자료가 없습니다.</div>}</div>
           <div className="slide-controls">
             <button type="button" onClick={() => moveToSlide(session.currentSlide - 1)} disabled={session.currentSlide <= 1}><Icon name="chevron-left"/> 이전</button>
-            <div>{slides.map((slide) => <button aria-label={`Slide ${slide.page}`} className={slide.page === session.currentSlide ? 'active' : ''} key={slide.page} onClick={() => moveToSlide(slide.page)}><span>{slide.page}</span></button>)}</div>
+            <div>{slides.map((slide) => <button aria-label={`Page ${slide.page}`} className={slide.page === session.currentSlide ? 'active' : ''} key={slide.page} onClick={() => moveToSlide(slide.page)}><span>{slide.page}</span></button>)}</div>
             <button type="button" onClick={() => moveToSlide(session.currentSlide + 1)} disabled={session.currentSlide >= slides.length}>다음 <Icon name="chevron-right"/></button>
           </div>
         </section>
@@ -172,20 +185,23 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
         <section className="guidance-panel">
           <div className="guidance-heading">
             <div><span>DECISION READINESS</span><h2>의사결정 준비도</h2><p>아직 남은 필수 핵심 {remainingRequired.length}개</p></div>
-            <div className="completion-dial"><span style={{ '--progress': `${readiness * 3.6}deg` } as React.CSSProperties}><b>{readiness}%</b></span><small>필수 {deliveredRequiredCount}/{requiredItems.length}</small></div>
+            <div className="readiness-metric"><strong>{deliveredRequiredCount}<em>/ {requiredItems.length}</em></strong><small>핵심 정보 전달 · {readiness}%</small><span><i style={{ width: `${readiness}%` }}/></span></div>
           </div>
 
           <div className="remaining-list">
             {visibleItems.map((item) => (
               <button type="button" className={`remaining-item ${item.delivered ? 'is-delivered' : ''} ${item.required ? 'is-required' : ''}`} key={item.id} onClick={() => toggleItem(item.id)}>
                 <span className="check-box">{item.delivered && <Icon name="check" size={14}/>}</span>
-                <div><span><Badge tone={item.required ? 'blue' : 'neutral'}>{item.required ? '필수' : '선택'}</Badge><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>SLIDE {item.slide}</small></span><strong>{item.title}</strong></div>
+                <div><span><Badge tone={item.required ? 'blue' : 'neutral'}>{item.required ? '필수' : '선택'}</Badge><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>PAGE {item.slide}</small></span><strong>{item.title}</strong></div>
               </button>
             ))}
+            {!visibleItems.length && <div className="remaining-complete"><Icon name="check" size={23}/><strong>필수 정보가 모두 전달되었습니다</strong><p>선택 항목과 전달 완료 항목은 아래에서 확인할 수 있습니다.</p></div>}
           </div>
 
+          {hiddenItemCount > 0 && <button className="remaining-list-toggle" type="button" onClick={() => setShowAllItems((value) => !value)}>{showAllItems ? '핵심 3개만 보기' : `${collapsedListLabel} 더 보기`} <Icon name={showAllItems ? 'chevron-left' : 'chevron-right'} size={15}/></button>}
+
           <div className="next-core-card">
-            <div><span><Icon name="target" size={15}/> NEXT CORE</span><strong>{nextItem ? nextItem.title : '필수 정보 전달 완료'}</strong><p>{nextItem ? `관련 자료: Slide ${nextItem.slide}` : '의사결정에 필요한 필수 정보가 모두 전달되었습니다.'}</p></div>
+            <div><span><Icon name="target" size={15}/> NEXT ACTION</span><strong>{nextAction}</strong><p>{nextItem ? `${nextItem.title} · Page ${nextItem.slide}` : '의사결정에 필요한 필수 정보가 모두 전달되었습니다.'}</p></div>
             {nextItem && <button type="button" onClick={() => moveToSlide(nextItem.slide)}>다음 핵심 <Icon name="arrow-right" size={16}/></button>}
           </div>
         </section>
@@ -207,7 +223,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
       {debugOpen && <div className="transcript-debug"><div><span>LIVE TRANSCRIPT</span><button onClick={() => setDebugOpen(false)}><Icon name="x" size={16}/></button></div><pre>{session.transcript || '아직 확정된 발화가 없습니다.'}{speech.interimTranscript && `\n[interim] ${speech.interimTranscript}`}</pre></div>}
       {evidenceOpen && <><div className="drawer-scrim" onClick={() => setEvidenceOpen(false)}/><EvidenceDrawer slides={slides} onClose={() => setEvidenceOpen(false)} onSearch={() => setSession((current) => ({ ...current, evidenceSearchCount: current.evidenceSearchCount + 1 }))} onMove={(slide) => { moveToSlide(slide); setEvidenceOpen(false); }}/></>}
 
-      {session.demoMode && <div className="demo-controls"><span><Icon name="spark" size={14}/> DEMO CONTROL</span><small>공사비 증가를 말하지 않고 Slide 5를 넘겨 보세요.</small><button onClick={() => submitManual('최대 냉각부하는 106.2킬로와트입니다')}>106.2kW 발화</button><button onClick={setDemoScenario}>리스크·요청만 남기기</button><button onClick={setThirtySeconds}>선택 시간 30초</button></div>}
+      {session.demoMode && <div className="demo-controls"><span><Icon name="spark" size={14}/> 심사 시연 도구 <em>DEMO ONLY</em></span><small>공사비 증가를 말하지 않고 Page 5를 넘겨 보세요.</small><button onClick={() => submitManual('최대 냉각부하는 106.2킬로와트입니다')}>106.2kW 발화</button><button onClick={setDemoScenario}>리스크·요청만 남기기</button><button onClick={setThirtySeconds}>선택 시간 30초</button></div>}
     </div>
   );
 }

@@ -37,13 +37,16 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
       <div className="report-destination"><span><Icon name="target" size={18}/> 이번 보고의 목적지</span><strong>{session.objective}</strong><Badge tone={completion === 100 ? 'green' : 'amber'}>{completion === 100 ? '완결' : `${missed.length}개 미전달`}</Badge></div>
 
       <section className="report-kpis">
-        <div><span>필수 정보 전달</span><strong>{requiredDelivered}<em>/ {required.length}</em></strong><small>{missed.length ? `${missed.length}개 보완 필요` : '모든 필수 정보 전달'}</small></div>
-        <div><span>선택 정보 전달</span><strong>{optionalDelivered}<em>/ {optional.length}</em></strong><small>선택 항목은 완결률에 미반영</small></div>
-        {(session.timeLimitSeconds || session.meetingEndAt) && <div><span>선택 시간 정보</span><strong>{session.timeLimitSeconds ? formatClock(session.timeLimitSeconds) : '회의 종료'}</strong><small>실제 보고 {formatClock(actualSeconds)}</small></div>}
-        {(session.timeLimitSeconds || session.meetingEndAt) && <div><span>시간 기반 우선 안내</span><strong>{session.priorityGuideCount}<em>회</em></strong><small>필수 항목 우선 표시</small></div>}
-        <div><span>질의응답 근거 탐색</span><strong>{session.evidenceSearchCount}<em>건</em></strong><small>Evidence Navi 사용 기록</small></div>
-        <div><span>수동 상태 수정</span><strong>{session.manualOverrideCount}<em>회</em></strong><small>보고자 최종 통제</small></div>
+        <div><span>목적지 도달률</span><strong>{completion}<em>%</em></strong><small>필수 정보 기준</small></div>
+        <div><span>필수 정보 전달</span><strong>{requiredDelivered}<em>/ {required.length}</em></strong><small>보고 중 확인된 핵심 정보</small></div>
+        <div><span>보완이 필요한 핵심</span><strong>{missed.length}<em>개</em></strong><small>{missed.length ? '다음 보고 전 보완 필요' : '필수 정보 전달 완료'}</small></div>
       </section>
+      <div className="report-secondary-meta">
+        <span>선택 정보 {optionalDelivered}/{optional.length} 전달</span>
+        <span>Evidence Navi {session.evidenceSearchCount}회</span>
+        <span>수동 상태 수정 {session.manualOverrideCount}회</span>
+        {(session.timeLimitSeconds || session.meetingEndAt) && <span>실제 보고 {formatClock(actualSeconds)} · 시간 기반 우선 안내 {session.priorityGuideCount}회</span>}
+      </div>
 
       <section className="report-detail-grid">
         <div className="delivery-ledger">
@@ -52,7 +55,7 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
             {session.decisionItems.map((item) => (
               <article className={item.delivered ? 'delivered' : 'missed'} key={item.id}>
                 <span className="ledger-status">{item.delivered ? <Icon name="check" size={15}/> : <Icon name="alert" size={15}/>}</span>
-                <div><span><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>SLIDE {item.slide}</small>{item.required && <Badge tone="blue">필수</Badge>}</span><strong>{item.title}</strong></div>
+                <div><span><em className={`type-text type-text--${item.type}`}>{DECISION_LABELS[item.type]}</em><small>PAGE {item.slide}</small>{item.required && <Badge tone="blue">필수</Badge>}</span><strong>{item.title}</strong></div>
                 <small>{item.delivered ? '전달됨' : '미전달'}</small>
               </article>
             ))}

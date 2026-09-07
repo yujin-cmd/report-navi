@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, normalizeText, searchEvidence, shouldPrioritize } from './report';
+import { findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, getTimeGuideState, normalizeText, searchEvidence, shouldPrioritize } from './report';
 
 describe('Report Navi local matching', () => {
   it('normalizes Korean numeric unit variants', () => {
@@ -25,6 +25,21 @@ describe('Report Navi local matching', () => {
   it('prioritizes required items when configured time is too short', () => {
     expect(shouldPrioritize(30, cloneDemoItems())).toBe(true);
     expect(shouldPrioritize(300, cloneDemoItems())).toBe(false);
+  });
+
+  it('fully disables time guidance when timer mode is off', () => {
+    expect(getTimeGuideState({ timerMode: 'off', timeLimitSeconds: 30, meetingEndAt: '2099-01-01T00:00', startedAt: 0 }, 10_000))
+      .toEqual({ enabled: false, remainingSeconds: 0 });
+  });
+
+  it('counts down only the selected duration mode', () => {
+    expect(getTimeGuideState({ timerMode: 'duration', timeLimitSeconds: 60, startedAt: 1_000 }, 31_000))
+      .toEqual({ enabled: true, remainingSeconds: 30 });
+  });
+
+  it('counts down to a selected meeting deadline', () => {
+    expect(getTimeGuideState({ timerMode: 'deadline', meetingEndAt: '2030-01-01T00:01:00.000Z' }, Date.parse('2030-01-01T00:00:00.000Z')))
+      .toEqual({ enabled: true, remainingSeconds: 60 });
   });
 
   it('finds the supporting slide without generating an answer', () => {

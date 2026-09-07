@@ -15,7 +15,8 @@ function loadDraft(): ReportSession {
       const parsed = JSON.parse(stored) as ReportSession & { rerouteCount?: number };
       if (parsed?.id && Array.isArray(parsed.decisionItems)) {
         const { rerouteCount, ...current } = parsed;
-        return { ...createDefaultSession(), ...current, priorityGuideCount: parsed.priorityGuideCount ?? rerouteCount ?? 0 };
+        const timerMode = parsed.timerMode || (parsed.timeLimitSeconds ? 'duration' : parsed.meetingEndAt ? 'deadline' : 'off');
+        return { ...createDefaultSession(), ...current, timerMode, priorityGuideCount: parsed.priorityGuideCount ?? rerouteCount ?? 0 };
       }
     }
   } catch {
@@ -60,12 +61,18 @@ export default function App() {
   if (projectorMode) return <ProjectorScreen />;
 
   function continueSetup(next: ReportSession) {
-    const destinationChanged = next.title !== session.title
-      || next.objectiveType !== session.objectiveType
-      || next.objective !== session.objective
-      || next.timeLimitSeconds !== session.timeLimitSeconds
-      || next.meetingEndAt !== session.meetingEndAt;
-    setSession(destinationChanged ? { ...next, decisionItems: [] } : next);
+    const normalized = next.timerMode === 'off'
+      ? { ...next, timeLimitSeconds: undefined, meetingEndAt: undefined }
+      : next.timerMode === 'duration'
+        ? { ...next, meetingEndAt: undefined }
+        : { ...next, timeLimitSeconds: undefined };
+    const destinationChanged = normalized.title !== session.title
+      || normalized.objectiveType !== session.objectiveType
+      || normalized.objective !== session.objective
+      || normalized.timerMode !== session.timerMode
+      || normalized.timeLimitSeconds !== session.timeLimitSeconds
+      || normalized.meetingEndAt !== session.meetingEndAt;
+    setSession(destinationChanged ? { ...normalized, decisionItems: [] } : normalized);
     setFurthestStep((current) => destinationChanged || STEP_ORDER.indexOf(current) < 1 ? 'upload' : current);
     setStep('upload');
   }

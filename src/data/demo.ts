@@ -212,6 +212,7 @@ export function createDefaultSession(): ReportSession {
     title: '데이터센터 냉각설비 설계안 검토',
     objectiveType: '발주처 승인',
     objective: '발주처로부터 냉각설비 B안 적용 승인을 받는다.',
+    timerMode: 'off',
     currentSlide: 1,
     decisionItems: [],
     transcript: '',

@@ -1,4 +1,4 @@
-import { DECISION_LABELS, type DecisionItem, type DecisionType, type EvidenceResult, type SlideData } from '../types';
+import { DECISION_LABELS, type DecisionItem, type DecisionType, type EvidenceResult, type ReportSession, type SlideData } from '../types';
 
 const STOP_WORDS = new Set([
   '그리고', '하지만', '대한', '관련', '이번', '해당', '현재', '저희', '것입니다', '합니다',
@@ -88,6 +88,21 @@ export function getRemainingRequiredSeconds(items: DecisionItem[]): number {
 export function shouldPrioritize(remainingSeconds: number, items: DecisionItem[], safetyBuffer = 12): boolean {
   const requiredSeconds = getRemainingRequiredSeconds(items);
   return requiredSeconds > 0 && remainingSeconds < requiredSeconds + safetyBuffer;
+}
+
+export function getTimeGuideState(
+  session: Pick<ReportSession, 'timerMode' | 'timeLimitSeconds' | 'meetingEndAt' | 'startedAt'>,
+  now = Date.now(),
+): { enabled: boolean; remainingSeconds: number } {
+  if (session.timerMode === 'duration' && session.timeLimitSeconds && session.timeLimitSeconds > 0) {
+    const elapsedSeconds = Math.max(0, Math.floor((now - (session.startedAt || now)) / 1000));
+    return { enabled: true, remainingSeconds: Math.max(0, session.timeLimitSeconds - elapsedSeconds) };
+  }
+  if (session.timerMode === 'deadline' && session.meetingEndAt) {
+    const deadline = new Date(session.meetingEndAt).getTime();
+    if (Number.isFinite(deadline)) return { enabled: true, remainingSeconds: Math.max(0, Math.floor((deadline - now) / 1000)) };
+  }
+  return { enabled: false, remainingSeconds: 0 };
 }
 
 export function getNextRequiredItem(items: DecisionItem[], currentSlide: number): DecisionItem | undefined {

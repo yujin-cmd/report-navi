@@ -2,6 +2,8 @@ export type AppStep = 'setup' | 'upload' | 'review' | 'presenter' | 'report';
 
 export type DecisionType = 'conclusion' | 'evidence' | 'assumption' | 'risk' | 'request';
 
+export type TimerMode = 'off' | 'duration' | 'deadline';
+
 export interface DecisionItem {
   id: string;
   type: DecisionType;
@@ -35,6 +37,7 @@ export interface ReportSession {
   title: string;
   objectiveType: string;
   objective: string;
+  timerMode: TimerMode;
   timeLimitSeconds?: number;
   meetingEndAt?: string;
   startedAt?: number;

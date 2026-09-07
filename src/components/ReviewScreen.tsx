@@ -17,6 +17,8 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
   const requiredCount = items.filter((item) => item.required).length;
   const optionalCount = items.length - requiredCount;
   const estimatedSeconds = items.reduce((total, item) => total + item.estimatedSeconds, 0);
+  const hasTimeGuide = (session.timerMode === 'duration' && Boolean(session.timeLimitSeconds))
+    || (session.timerMode === 'deadline' && Boolean(session.meetingEndAt));
   const grouped = useMemo(() => {
     const result = {} as Record<DecisionType, DecisionItem[]>;
     (Object.keys(DECISION_LABELS) as DecisionType[]).forEach((type) => { result[type] = items.filter((item) => item.type === type); });
@@ -89,11 +91,11 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
         <button type="button" className="button button--secondary" onClick={addItem}><Icon name="plus" size={17}/> 새 항목 추가</button>
       </div>
 
-      <section className="review-summary">
+      <section className={`review-summary ${hasTimeGuide ? 'has-time-guide' : ''}`}>
         <div><small>필수 항목</small><strong>{requiredCount}<em>개</em></strong></div>
         <div><small>선택 항목</small><strong>{optionalCount}<em>개</em></strong></div>
         <div><small>예상 전달시간</small><strong>{Math.floor(estimatedSeconds / 60)}:{String(estimatedSeconds % 60).padStart(2, '0')}</strong></div>
-        {(session.timeLimitSeconds || session.meetingEndAt) && <div><small>선택 시간 안내</small><strong>{session.timeLimitSeconds ? `${Math.floor(session.timeLimitSeconds / 60)}분` : '회의 종료'}</strong></div>}
+        {hasTimeGuide && <div><small>선택 시간 안내</small><strong>{session.timerMode === 'duration' && session.timeLimitSeconds ? `${Math.floor(session.timeLimitSeconds / 60)}분` : '회의 종료'}</strong></div>}
         <div className="summary-destination"><span><Icon name="target" size={17}/> 목적지</span><strong>{session.objective}</strong></div>
       </section>
 
@@ -140,7 +142,7 @@ export function ReviewScreen({ session, onStart, onStepNavigate, furthestStep }:
             ['5개 유형이 모두 있는가', Object.values(grouped).every((group) => group.length > 0)],
             ['필수 항목이 지정됐는가', requiredCount > 0],
             ['최종 요청이 포함됐는가', grouped.request.length > 0],
-            ...(session.timeLimitSeconds ? [['예상시간이 목표시간 내인가', estimatedSeconds <= session.timeLimitSeconds] as [string, boolean]] : []),
+            ...(session.timerMode === 'duration' && session.timeLimitSeconds ? [['예상시간이 목표시간 내인가', estimatedSeconds <= session.timeLimitSeconds] as [string, boolean]] : []),
           ].map(([label, checked]) => <div className="check-row" key={String(label)}><span className={checked ? 'checked' : ''}>{checked && <Icon name="check" size={13}/>}</span><strong>{label}</strong></div>)}</div>
 
           <div className="question-panel">

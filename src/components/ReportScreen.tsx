@@ -45,7 +45,7 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
         <span>선택 정보 {optionalDelivered}/{optional.length} 전달</span>
         <span>Evidence Navi {session.evidenceSearchCount}회</span>
         <span>수동 상태 수정 {session.manualOverrideCount}회</span>
-        {(session.timeLimitSeconds || session.meetingEndAt) && <span>실제 보고 {formatClock(actualSeconds)} · 시간 기반 우선 안내 {session.priorityGuideCount}회</span>}
+        {session.timerMode !== 'off' && (session.timeLimitSeconds || session.meetingEndAt) && <span>실제 보고 {formatClock(actualSeconds)} · 시간 기반 우선 안내 {session.priorityGuideCount}회</span>}
       </div>
 
       <section className="report-detail-grid">

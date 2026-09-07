@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { findDeliveredItemIds, formatClock, getNextRequiredItem, shouldPrioritize } from '../lib/report';
+import { findDeliveredItemIds, formatClock, getNextRequiredItem, getTimeGuideState, shouldPrioritize } from '../lib/report';
 import { DECISION_LABELS, type ProjectorSnapshot, type ReportSession, type SlideData } from '../types';
 import { Badge, Icon, SlideCanvas } from './common';
 import { EvidenceDrawer } from './EvidenceDrawer';
@@ -26,14 +26,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   const snapshotRef = useRef<ProjectorSnapshot>({ currentSlide: session.currentSlide, slides, title: session.title, objective: session.objective });
   const slidesRef = useRef(slides);
 
-  const elapsedSeconds = Math.max(0, Math.floor((now - (session.startedAt || now)) / 1000));
-  const meetingEndTimestamp = session.meetingEndAt ? new Date(session.meetingEndAt).getTime() : Number.NaN;
-  const configuredTimes = [
-    session.timeLimitSeconds ? Math.max(0, session.timeLimitSeconds - elapsedSeconds) : undefined,
-    Number.isFinite(meetingEndTimestamp) ? Math.max(0, Math.floor((meetingEndTimestamp - now) / 1000)) : undefined,
-  ].filter((value): value is number => typeof value === 'number');
-  const hasTimeGuide = configuredTimes.length > 0;
-  const remainingSeconds = hasTimeGuide ? Math.min(...configuredTimes) : 0;
+  const { enabled: hasTimeGuide, remainingSeconds } = getTimeGuideState(session, now);
   const priorityGuide = hasTimeGuide && shouldPrioritize(remainingSeconds, session.decisionItems);
   const activeSlide = slides.find((slide) => slide.page === session.currentSlide) || slides[0];
   const remainingItems = session.decisionItems.filter((item) => !item.delivered);
@@ -43,9 +36,10 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   const nextItem = getNextRequiredItem(session.decisionItems, session.currentSlide);
 
   useEffect(() => {
+    if (!hasTimeGuide) return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [hasTimeGuide]);
 
   useEffect(() => {
     if (priorityGuide && !priorityGuideActiveRef.current) {
@@ -135,7 +129,7 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
   }
 
   function setThirtySeconds() {
-    setSession((current) => ({ ...current, timeLimitSeconds: 30, meetingEndAt: undefined, startedAt: Date.now() }));
+    setSession((current) => ({ ...current, timerMode: 'duration', timeLimitSeconds: 30, meetingEndAt: undefined, startedAt: Date.now() }));
     announce('선택 시간 안내를 30초로 설정했습니다.');
   }
 

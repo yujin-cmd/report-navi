@@ -1,12 +1,24 @@
 import { useState } from 'react';
-import { OBJECTIVE_TYPES, type AppStep, type ReportSession } from '../types';
+import { OBJECTIVE_TYPES, type AppStep, type ReportSession, type TimerMode } from '../types';
 import { Icon, PageShell } from './common';
 
 export function SetupScreen({ session, onContinue, onSampleStart, onStepNavigate, furthestStep }: { session: ReportSession; onContinue: (session: ReportSession) => void; onSampleStart: () => void; onStepNavigate: (step: AppStep) => void; furthestStep: AppStep }) {
   const [draft, setDraft] = useState(session);
   const [showSetupForm, setShowSetupForm] = useState(furthestStep !== 'setup');
   const minutes = draft.timeLimitSeconds ? Math.max(1, Math.round(draft.timeLimitSeconds / 60)) : '';
-  const valid = draft.title.trim().length > 2 && draft.objective.trim().length > 5;
+  const deadlineTimestamp = draft.meetingEndAt ? new Date(draft.meetingEndAt).getTime() : Number.NaN;
+  const timerValid = draft.timerMode === 'off'
+    || (draft.timerMode === 'duration' && Boolean(draft.timeLimitSeconds && draft.timeLimitSeconds >= 60))
+    || (draft.timerMode === 'deadline' && Number.isFinite(deadlineTimestamp) && deadlineTimestamp > Date.now());
+  const valid = draft.title.trim().length > 2 && draft.objective.trim().length > 5 && timerValid;
+
+  function selectTimerMode(timerMode: TimerMode) {
+    setDraft((current) => timerMode === 'off'
+      ? { ...current, timerMode, timeLimitSeconds: undefined, meetingEndAt: undefined }
+      : timerMode === 'duration'
+        ? { ...current, timerMode, timeLimitSeconds: current.timeLimitSeconds || 300, meetingEndAt: undefined }
+        : { ...current, timerMode, timeLimitSeconds: undefined });
+  }
 
   return (
     <PageShell step="setup" onStepNavigate={onStepNavigate} furthestStep={furthestStep}>
@@ -61,18 +73,31 @@ export function SetupScreen({ session, onContinue, onSampleStart, onStepNavigate
             <textarea rows={3} value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} placeholder="이 보고를 통해 받아야 할 결정이나 행동을 적어주세요." />
             <small>가능하면 “누구에게서 무엇을 얻는다” 형태로 작성하세요.</small>
           </label>
-          <div className="optional-time-fields">
-            <div className="optional-field-heading"><span><Icon name="clock" size={16}/> 시간 안내</span><em>선택사항</em></div>
-            <label className="field">
+          <fieldset className="optional-time-fields">
+            <legend className="optional-field-heading"><span><Icon name="clock" size={16}/> 타이머</span><em>선택 기능</em></legend>
+            <div className="timer-mode-options">
+              {([
+                ['off', '사용 안 함', '핵심 정보만 추적'],
+                ['duration', '목표 보고시간', '설정한 시간부터 카운트다운'],
+                ['deadline', '회의 종료시간', '종료 예정시각까지 안내'],
+              ] as Array<[TimerMode, string, string]>).map(([value, label, description]) => (
+                <label className={draft.timerMode === value ? 'active' : ''} key={value}>
+                  <input type="radio" name="timer-mode" value={value} checked={draft.timerMode === value} onChange={() => selectTimerMode(value)}/>
+                  <span><strong>{label}</strong><small>{description}</small></span>
+                </label>
+              ))}
+            </div>
+            {draft.timerMode === 'duration' && <label className="field timer-setting-field">
               <span>목표 보고시간</span>
-              <div className="time-input"><Icon name="clock" size={18}/><input type="number" min={1} max={120} value={minutes} placeholder="설정 안 함" onChange={(event) => setDraft({ ...draft, timeLimitSeconds: event.target.value ? Math.max(60, Number(event.target.value) * 60) : undefined })}/><em>분</em></div>
-            </label>
-            <label className="field">
+              <div className="time-input"><Icon name="clock" size={18}/><input type="number" min={1} max={120} value={minutes} onChange={(event) => setDraft({ ...draft, timeLimitSeconds: event.target.value ? Math.max(60, Number(event.target.value) * 60) : undefined })}/><em>분</em></div>
+            </label>}
+            {draft.timerMode === 'deadline' && <label className="field timer-setting-field">
               <span>회의 종료 예정시간</span>
               <input type="datetime-local" value={draft.meetingEndAt || ''} onChange={(event) => setDraft({ ...draft, meetingEndAt: event.target.value || undefined })}/>
-            </label>
-            <small className="optional-time-note">시간을 설정하지 않아도 미전달 추적과 근거 탐색은 동일하게 작동합니다.</small>
-          </div>
+              {draft.meetingEndAt && !timerValid && <small className="field-error">현재보다 이후 시간을 선택해 주세요.</small>}
+            </label>}
+            <small className="optional-time-note">기본값은 사용 안 함입니다. 타이머를 끄더라도 Decision Set, 미전달 추적, 준비도와 Evidence Navi는 동일하게 작동합니다.</small>
+          </fieldset>
           <div className="destination-summary">
             <span><Icon name="target" size={17}/> 목적지</span>
             <strong>{draft.objective || '목적을 입력해 주세요.'}</strong>

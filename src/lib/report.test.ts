@@ -97,11 +97,35 @@ describe('임의 PDF 로컬 분석', () => {
     },
   ];
 
-  it('일반 라벨이 아니라 원문 문장에서 제목을 만든다', () => {
+  const GENERIC_TITLES = ['보고의 최종 제안 확인', '핵심 수치와 비교 근거 확인', '판단에 적용된 전제조건 확인', '선택에 따른 영향과 리스크 확인', '상대방에게 필요한 결정사항 확인'];
+
+  it('자료에 있는 유형은 일반 라벨이 아니라 원문 문장에서 제목을 만든다', () => {
     const items = generateFallbackDecisionSet(slides, '공조설비 대안 승인');
-    const generic = ['보고의 최종 제안 확인', '핵심 수치와 비교 근거 확인', '판단에 적용된 전제조건 확인', '선택에 따른 영향과 리스크 확인', '상대방에게 필요한 결정사항 확인'];
     expect(items.length).toBeGreaterThanOrEqual(5);
-    expect(items.every((item) => !generic.includes(item.title))).toBe(true);
+    for (const type of ['evidence', 'risk', 'request', 'assumption'] as const) {
+      const item = items.find((entry) => entry.type === type);
+      expect(item).toBeDefined();
+      expect(GENERIC_TITLES).not.toContain(item!.title);
+    }
+  });
+
+  it('자료에 없는 유형은 일반 라벨로 표시해 직접 채우게 한다', () => {
+    const thin = [{ page: 1, title: '물량표', sourceText: '구분 수량 단가\n철근 120톤 850,000', imageDataUrl: '' }];
+    const items = generateFallbackDecisionSet(thin, '물량 승인');
+    const conclusion = items.find((entry) => entry.type === 'conclusion');
+    expect(conclusion?.title).toBe('보고의 최종 제안 확인');
+  });
+
+  it('자료가 빈약해도 5개 유형을 모두 만든다', () => {
+    const thin = [{ page: 1, title: '인사', sourceText: '안녕하십니까 함께해 주셔서 감사합니다', imageDataUrl: '' }];
+    const items = generateFallbackDecisionSet(thin, '승인 요청');
+    expect(new Set(items.map((item) => item.type)).size).toBe(5);
+  });
+
+  it('숫자에 한글 단위가 붙어도 매칭된다', () => {
+    const table = [{ page: 1, title: '물량표', sourceText: '철근 물량은 120톤으로 산정되었습니다.', imageDataUrl: '' }];
+    const items = generateFallbackDecisionSet(table, '물량 승인');
+    expect(findDeliveredItemIds('철근 물량은 120톤입니다', items).length).toBeGreaterThan(0);
   });
 
   it('생성된 변형이 실제 발화와 매칭된다', () => {

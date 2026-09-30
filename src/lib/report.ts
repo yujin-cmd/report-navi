@@ -20,6 +20,7 @@ export function normalizeText(input: string): string {
   for (const [pattern, replacement] of NUMBER_WORDS) text = text.replace(pattern, replacement);
   return text
     .replace(/([0-9]+(?:\.[0-9]+)?)(percent|kw|mw|sqm|celsius|eokwon|manwon)/g, '$1 $2')
+    .replace(/([0-9])([가-힣])/g, '$1 $2')
     .replace(/[^0-9a-z가-힣.]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -176,6 +177,7 @@ const FALLBACK_TITLES: Record<DecisionType, string> = {
   request: '상대방에게 필요한 결정사항 확인',
 };
 
+const RELEVANCE_FLOOR = 0.35;
 const REQUEST_HINT = /요청|승인|결정|확정|협의|바랍니다|검토해\s?주|부탁/;
 const NUMERIC_WITH_UNIT = /(\d[\d,]*(?:\.\d+)?)\s*(%|퍼센트|프로|k\s?w|킬로와트|m\s?w|메가와트|㎡|제곱미터|℃|억\s?원|만\s?원|원|명|개소|개월|개|건|일|년|시간|분|배|kg|mm|cm|m)?/gi;
 
@@ -190,12 +192,18 @@ const KOREAN_UNIT_READING: Array<[RegExp, string]> = [
 /** 슬라이드 원문을 문장/항목 단위로 나눈다. */
 export function extractSentences(text: string): string[] {
   if (!text) return [];
-  return text
+  const lines = text
     .replace(/([.!?。])\s+/g, '$1\n')
     .split(/[\n\r]+|[•▪■◦※]\s*/)
     .map((line) => line.replace(/^[\s\-–—·*∙>]+/, '').replace(/\s+/g, ' ').trim())
-    .filter((line) => line.length >= 6)
-    .map((line) => (line.length > 160 ? `${line.slice(0, 160)}…` : line));
+    .filter((line) => line.length >= 6);
+
+  // 마침표 없이 이어진 긴 줄은 쉼표 단위로 한 번 더 나눈다.
+  const expanded = lines.flatMap((line) => (line.length > 100 && line.includes(', ')
+    ? line.split(', ').map((part) => part.trim()).filter((part) => part.length >= 6)
+    : [line]));
+
+  return [...new Set(expanded)].map((line) => (line.length > 160 ? `${line.slice(0, 160)}…` : line));
 }
 
 /** 문장에서 "숫자+단위" 표현을 뽑는다. 예: 106.2kW, 8% */
@@ -354,25 +362,47 @@ export function generateFallbackDecisionSet(slides: SlideData[], objective: stri
   }
 
   const usedSentences = new Set<string>();
-  const usedSlides = new Set<number>();
   const items: DecisionItem[] = [];
 
+  // 유형을 순서대로 처리하면 앞 유형이 뒤 유형의 문장을 가져가 버린다.
+  // (예: "…선정에 대한 승인을 요청드립니다"가 결론으로 소비되어 요청 항목이 비는 경우)
+  // 따라서 (유형 × 문장) 쌍을 점수순으로 한 번에 배정한다.
+  const pairs = types.flatMap((type) =>
+    pool.map((entry) => ({ type, entry, score: scoreSentence(entry.text, type) })));
+  pairs.sort((left, right) => right.score - left.score);
+
+  const assigned = new Map<DecisionType, { text: string; slide: SlideData }>();
+  for (const pair of pairs) {
+    if (assigned.has(pair.type) || usedSentences.has(pair.entry.text)) continue;
+    if (pair.score <= RELEVANCE_FLOOR) continue;
+    assigned.set(pair.type, { text: pair.entry.text, slide: pair.entry.slide });
+    usedSentences.add(pair.entry.text);
+    if (assigned.size === types.length) break;
+  }
+
   types.forEach((type, index) => {
-    const ranked = pool
-      .filter((entry) => !usedSentences.has(entry.text))
-      .map((entry) => ({
-        ...entry,
-        score: scoreSentence(entry.text, type) - (usedSlides.has(entry.slide.page) ? 0.4 : 0),
-      }))
-      .sort((left, right) => right.score - left.score);
+    const required = type === 'conclusion' || type === 'request';
+    const picked = assigned.get(type);
 
-    const best = ranked[0];
-    if (!best) return;
-    usedSentences.add(best.text);
-    usedSlides.add(best.slide.page);
+    // 자료에서 해당 유형을 찾지 못하면 빈 항목으로 남겨 사용자가 채우게 한다.
+    if (!picked) {
+      const slide = slides[Math.min(index, slides.length - 1)];
+      items.push({
+        id: `local-${type}-${Date.now()}-${index}`,
+        type,
+        title: FALLBACK_TITLES[type],
+        detail: `자료에서 ${DECISION_LABELS[type]} 문장을 찾지 못했습니다. 직접 입력하거나 삭제하세요.`,
+        slide: slide.page,
+        required,
+        estimatedSeconds: 12,
+        variants: [FALLBACK_TITLES[type]],
+        sourceText: slide.sourceText.trim(),
+        delivered: false,
+      });
+      return;
+    }
 
-    const required = type === 'conclusion' || type === 'request' || keywordHits(best.text, type) > 0;
-    items.push(toItem(type, best.text, best.slide, index, required));
+    items.push(toItem(type, picked.text, picked.slide, index, required || keywordHits(picked.text, type) > 0));
   });
 
   // 수치가 포함된 문장을 근거/리스크로 최대 3개까지 보강한다.

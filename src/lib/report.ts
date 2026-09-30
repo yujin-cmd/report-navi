@@ -9,13 +9,17 @@ const NUMBER_WORDS: Array<[RegExp, string]> = [
   [/퍼센트|프로|%/gi, ' percent '],
   [/킬로와트|k\s*w/gi, ' kw '],
   [/메가와트|m\s*w/gi, ' mw '],
+  [/제곱미터|㎡|m2/gi, ' sqm '],
+  [/섭씨|℃|°\s*c/gi, ' celsius '],
+  [/억\s*원/gi, ' eokwon '],
+  [/만\s*원/gi, ' manwon '],
 ];
 
 export function normalizeText(input: string): string {
   let text = input.toLowerCase().replace(/(\d),(?=\d{3}\b)/g, '$1');
   for (const [pattern, replacement] of NUMBER_WORDS) text = text.replace(pattern, replacement);
   return text
-    .replace(/([0-9]+(?:\.[0-9]+)?)(percent|kw|mw)/g, '$1 $2')
+    .replace(/([0-9]+(?:\.[0-9]+)?)(percent|kw|mw|sqm|celsius|eokwon|manwon)/g, '$1 $2')
     .replace(/[^0-9a-z가-힣.]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -68,7 +72,18 @@ export function phraseMatchScore(transcript: string, phrase: string): number {
   return coverage * 0.78 + shape * 0.22;
 }
 
+/** 항목을 정의하는 수치 토큰. 이 수치가 있으면 해당 수치를 말해야만 전달로 인정한다. */
+export function numericAnchors(item: Pick<DecisionItem, 'title' | 'detail'>): string[] {
+  const tokens = tokenize(`${item.title} ${item.detail}`).filter((token) => /^\d/.test(token));
+  return [...new Set(tokens)];
+}
+
 export function decisionMatchScore(transcript: string, item: DecisionItem): number {
+  const anchors = numericAnchors(item);
+  if (anchors.length) {
+    const spoken = new Set(tokenize(transcript));
+    if (!anchors.some((anchor) => spoken.has(anchor))) return 0;
+  }
   const phrases = [item.title, `${item.title} ${item.detail}`, ...item.variants];
   return Math.max(...phrases.map((phrase) => phraseMatchScore(transcript, phrase)));
 }
@@ -161,36 +176,224 @@ const FALLBACK_TITLES: Record<DecisionType, string> = {
   request: '상대방에게 필요한 결정사항 확인',
 };
 
+const REQUEST_HINT = /요청|승인|결정|확정|협의|바랍니다|검토해\s?주|부탁/;
+const NUMERIC_WITH_UNIT = /(\d[\d,]*(?:\.\d+)?)\s*(%|퍼센트|프로|k\s?w|킬로와트|m\s?w|메가와트|㎡|제곱미터|℃|억\s?원|만\s?원|원|명|개소|개월|개|건|일|년|시간|분|배|kg|mm|cm|m)?/gi;
+
+const KOREAN_UNIT_READING: Array<[RegExp, string]> = [
+  [/^kw$/i, '킬로와트'],
+  [/^mw$/i, '메가와트'],
+  [/^%$/, '퍼센트'],
+  [/^㎡$/, '제곱미터'],
+  [/^℃$/, '도'],
+];
+
+/** 슬라이드 원문을 문장/항목 단위로 나눈다. */
+export function extractSentences(text: string): string[] {
+  if (!text) return [];
+  return text
+    .replace(/([.!?。])\s+/g, '$1\n')
+    .split(/[\n\r]+|[•▪■◦※]\s*/)
+    .map((line) => line.replace(/^[\s\-–—·*∙>]+/, '').replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length >= 6)
+    .map((line) => (line.length > 160 ? `${line.slice(0, 160)}…` : line));
+}
+
+/** 문장에서 "숫자+단위" 표현을 뽑는다. 예: 106.2kW, 8% */
+export function extractNumerics(sentence: string, limit = 2): string[] {
+  const found: string[] = [];
+  for (const match of sentence.matchAll(NUMERIC_WITH_UNIT)) {
+    const value = match[1].replace(/,/g, '');
+    const unit = (match[2] || '').replace(/\s+/g, '');
+    if (!unit && !/\./.test(value) && value.length < 2) continue;
+    const phrase = `${value}${unit}`;
+    if (!found.includes(phrase)) found.push(phrase);
+    if (found.length >= limit) break;
+  }
+  return found;
+}
+
+function koreanReading(phrase: string): string | null {
+  const match = phrase.match(/^([\d.]+)(.*)$/);
+  if (!match) return null;
+  const [, value, unit] = match;
+  if (!unit) return null;
+  for (const [pattern, reading] of KOREAN_UNIT_READING) {
+    if (pattern.test(unit)) return `${value} ${reading}`;
+  }
+  return null;
+}
+
+/** 숫자를 제외한 핵심 단어만 추린다. */
+function keyTokens(sentence: string, limit = 8): string[] {
+  return tokenize(sentence)
+    .filter((token) => !/^\d/.test(token) && token.length >= 2)
+    .slice(0, limit);
+}
+
+/** 숫자 바로 앞에 나오는 단어를 문맥 앵커로 사용한다. */
+function contextBefore(sentence: string, numberPhrase: string, count = 2): string {
+  const value = numberPhrase.match(/^[\d.]+/)?.[0] ?? '';
+  const index = value ? sentence.indexOf(value) : -1;
+  const head = index > 0 ? sentence.slice(0, index) : sentence;
+  const tokens = keyTokens(head, 12);
+  return tokens.slice(Math.max(0, tokens.length - count)).join(' ');
+}
+
+/** 문장 전체를 3단어 창으로 훑어 앞·중간·끝 표현을 모두 확보한다. */
+function tokenWindows(sentence: string, max = 3): string[] {
+  const tokens = keyTokens(sentence, 12);
+  // 긴 문장은 창을 넓혀 특정성을 높이고, 짧은 문장은 3단어로 둔다.
+  const size = tokens.length >= 6 ? 4 : 3;
+  if (tokens.length <= size) return tokens.length ? [tokens.join(' ')] : [];
+  const windows: string[] = [];
+  const positions = [0, Math.floor((tokens.length - size) / 2), tokens.length - size];
+  for (const start of [...new Set(positions)]) {
+    windows.push(tokens.slice(start, start + size).join(' '));
+    if (windows.length >= max) break;
+  }
+  return windows;
+}
+
+/**
+ * 실제 발화와 매칭될 수 있는 표현 변형을 만든다.
+ * 긴 원문 한 덩어리는 커버리지가 낮아 매칭되지 않으므로
+ * 3단어 창과 "문맥 + 숫자" 앵커 구를 함께 생성한다.
+ */
+export function buildVariants(sentence: string, title: string): string[] {
+  const variants = new Set<string>();
+  const numbers = extractNumerics(sentence);
+
+  for (const window of tokenWindows(sentence)) variants.add(window);
+
+  for (const number of numbers) {
+    const anchor = contextBefore(sentence, number);
+    variants.add(anchor ? `${anchor} ${number}` : number);
+    const reading = koreanReading(number);
+    if (reading) variants.add(anchor ? `${anchor} ${reading}` : reading);
+  }
+
+  variants.add(title);
+  return [...variants].map((value) => value.trim()).filter((value) => value.length >= 2).slice(0, 7);
+}
+
+function buildTitle(sentence: string, type: DecisionType): string {
+  const compact = sentence.replace(/\s+/g, ' ').trim();
+  if (compact.length < 6) return FALLBACK_TITLES[type];
+  if (compact.length <= 46) return compact;
+  const cut = compact.slice(0, 46);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 24 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+function keywordHits(sentence: string, type: DecisionType): number {
+  const normalized = normalizeText(sentence);
+  return TYPE_KEYWORDS[type].reduce((total, keyword) => total + (normalized.includes(keyword) ? 1 : 0), 0);
+}
+
+function scoreSentence(sentence: string, type: DecisionType): number {
+  let score = keywordHits(sentence, type);
+  const hasNumber = /\d/.test(sentence);
+  if (hasNumber && (type === 'evidence' || type === 'risk')) score += 0.8;
+  if (type === 'request' && REQUEST_HINT.test(sentence)) score += 0.6;
+  if (sentence.length >= 12 && sentence.length <= 90) score += 0.3;
+  return score;
+}
+
+function toItem(
+  type: DecisionType,
+  sentence: string,
+  slide: SlideData,
+  index: number,
+  required: boolean,
+): DecisionItem {
+  const title = buildTitle(sentence, type);
+  const detail = sentence.length > 110 ? `${sentence.slice(0, 110)}…` : sentence;
+  return {
+    id: `local-${type}-${Date.now()}-${index}`,
+    type,
+    title,
+    detail,
+    slide: slide.page,
+    required,
+    estimatedSeconds: Math.min(26, Math.max(10, 10 + Math.floor(sentence.length / 8))),
+    variants: buildVariants(sentence, title),
+    sourceText: slide.sourceText.trim(),
+    delivered: false,
+  };
+}
+
+/**
+ * LLM 없이 PDF 원문만으로 Decision Set을 구성한다.
+ * 문장 단위로 후보를 만들고 유형별 최적 문장을 고른 뒤,
+ * 수치가 포함된 문장을 근거/리스크 항목으로 추가한다.
+ */
 export function generateFallbackDecisionSet(slides: SlideData[], objective: string): DecisionItem[] {
-  const used = new Set<number>();
+  if (!slides.length) return [];
   const types = Object.keys(TYPE_KEYWORDS) as DecisionType[];
 
-  return types.map((type, typeIndex) => {
-    const candidates = slides.map((slide) => {
-      const normalized = normalizeText(slide.sourceText);
-      const score = TYPE_KEYWORDS[type].reduce((total, keyword) => total + (normalized.includes(keyword) ? 1 : 0), 0);
-      return { slide, score };
+  const pool = slides.flatMap((slide) =>
+    extractSentences(slide.sourceText).map((text) => ({ slide, text })));
+
+  // 텍스트 추출이 불가능한 PDF(스캔본 등)에서는 슬라이드 단위로 최소 구성을 유지한다.
+  if (!pool.length) {
+    return types.map((type, index) => {
+      const slide = slides[Math.min(index, slides.length - 1)];
+      return {
+        id: `local-${type}-${Date.now()}-${index}`,
+        type,
+        title: FALLBACK_TITLES[type],
+        detail: `보고 목적 “${objective}” 달성에 필요한 ${FALLBACK_TITLES[type]} 항목입니다.`,
+        slide: slide.page,
+        required: type === 'conclusion' || type === 'request',
+        estimatedSeconds: 14,
+        variants: [FALLBACK_TITLES[type]],
+        sourceText: slide.sourceText.trim(),
+        delivered: false,
+      };
     });
-    const best = candidates.sort((left, right) => right.score - left.score || Number(used.has(left.slide.page)) - Number(used.has(right.slide.page)))[0];
-    used.add(best.slide.page);
-    const source = best.slide.sourceText.trim();
-    const shortSource = source.length > 80 ? `${source.slice(0, 80)}…` : source;
-    const slideTitle = best.slide.title.replace(/\n/g, ' ').slice(0, 42);
-    const title = best.score > 0 ? `${FALLBACK_TITLES[type]} · ${slideTitle}` : FALLBACK_TITLES[type];
-    const detail = best.score > 0 ? shortSource : `보고 목적 “${objective}” 달성에 필요한 ${FALLBACK_TITLES[type]} 항목입니다.`;
-    return {
-      id: `fallback-${type}-${Date.now()}-${typeIndex}`,
-      type,
-      title,
-      detail,
-      slide: best.slide.page,
-      required: true,
-      estimatedSeconds: type === 'risk' ? 18 : 14,
-      variants: [title, detail],
-      sourceText: source,
-      delivered: false,
-    };
+  }
+
+  const usedSentences = new Set<string>();
+  const usedSlides = new Set<number>();
+  const items: DecisionItem[] = [];
+
+  types.forEach((type, index) => {
+    const ranked = pool
+      .filter((entry) => !usedSentences.has(entry.text))
+      .map((entry) => ({
+        ...entry,
+        score: scoreSentence(entry.text, type) - (usedSlides.has(entry.slide.page) ? 0.4 : 0),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    const best = ranked[0];
+    if (!best) return;
+    usedSentences.add(best.text);
+    usedSlides.add(best.slide.page);
+
+    const required = type === 'conclusion' || type === 'request' || keywordHits(best.text, type) > 0;
+    items.push(toItem(type, best.text, best.slide, index, required));
   });
+
+  // 수치가 포함된 문장을 근거/리스크로 최대 3개까지 보강한다.
+  const extras = pool
+    .filter((entry) => !usedSentences.has(entry.text) && extractNumerics(entry.text).length > 0)
+    .map((entry) => ({
+      ...entry,
+      type: (keywordHits(entry.text, 'risk') > 0 ? 'risk' : 'evidence') as DecisionType,
+      score: Math.max(scoreSentence(entry.text, 'evidence'), scoreSentence(entry.text, 'risk')),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3);
+
+  extras.forEach((entry, offset) => {
+    usedSentences.add(entry.text);
+    items.push(toItem(entry.type, entry.text, entry.slide, types.length + offset, false));
+  });
+
+  return items
+    .sort((left, right) => left.slide - right.slide)
+    .slice(0, 8);
 }
 
 const QUESTION_TYPE_ORDER: DecisionType[] = ['evidence', 'assumption', 'risk', 'request', 'conclusion'];

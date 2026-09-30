@@ -58,53 +58,57 @@ export function SetupScreen({ session, onContinue, onSampleStart, onStepNavigate
             <div><span>STEP 01</span><h2>보고 목적지 설정</h2></div>
             <span className="required-note">* 필수 입력</span>
           </div>
-          <label className="field">
-            <span>보고 제목 *</span>
-            <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="예: 데이터센터 냉각설비 설계안 검토" />
-          </label>
-          <label className="field">
-            <span>보고 목적 유형 *</span>
-            <select value={draft.objectiveType} onChange={(event) => setDraft({ ...draft, objectiveType: event.target.value })}>
-              {OBJECTIVE_TYPES.map((type) => <option key={type}>{type}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span>{draft.objectiveType === '직접 입력' ? '목적 직접 입력 *' : '구체적인 목적 *'}</span>
-            <textarea rows={3} value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} placeholder="이 보고를 통해 받아야 할 결정이나 행동을 적어주세요." />
-            <small>가능하면 “누구에게서 무엇을 얻는다” 형태로 작성하세요.</small>
-          </label>
-          <fieldset className="optional-time-fields">
-            <legend className="optional-field-heading"><span><Icon name="clock" size={16}/> 타이머</span><em>선택 기능</em></legend>
-            <div className="timer-mode-options">
-              {([
-                ['off', '사용 안 함', '핵심 정보만 추적'],
-                ['duration', '목표 보고시간', '설정한 시간부터 카운트다운'],
-                ['deadline', '회의 종료시간', '종료 예정시각까지 안내'],
-              ] as Array<[TimerMode, string, string]>).map(([value, label, description]) => (
-                <label className={draft.timerMode === value ? 'active' : ''} key={value}>
-                  <input type="radio" name="timer-mode" value={value} checked={draft.timerMode === value} onChange={() => selectTimerMode(value)}/>
-                  <span><strong>{label}</strong><small>{description}</small></span>
-                </label>
-              ))}
+          <div className="setup-panel-fields">
+            <label className="field">
+              <span>보고 제목 *</span>
+              <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="예: 데이터센터 냉각설비 설계안 검토" />
+            </label>
+            <label className="field">
+              <span>보고 목적 유형 *</span>
+              <select value={draft.objectiveType} onChange={(event) => setDraft({ ...draft, objectiveType: event.target.value })}>
+                {OBJECTIVE_TYPES.map((type) => <option key={type}>{type}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>{draft.objectiveType === '직접 입력' ? '목적 직접 입력 *' : '구체적인 목적 *'}</span>
+              <textarea rows={3} value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} placeholder="이 보고를 통해 받아야 할 결정이나 행동을 적어주세요." />
+              <small>가능하면 “누구에게서 무엇을 얻는다” 형태로 작성하세요.</small>
+            </label>
+            <fieldset className="optional-time-fields">
+              <legend className="optional-field-heading"><span><Icon name="clock" size={16}/> 타이머</span><em>선택 기능</em></legend>
+              <div className="timer-mode-options">
+                {([
+                  ['off', '사용 안 함', '핵심 정보만 추적'],
+                  ['duration', '목표 보고시간', '설정한 시간부터 카운트다운'],
+                  ['deadline', '회의 종료시간', '종료 예정시각까지 안내'],
+                ] as Array<[TimerMode, string, string]>).map(([value, label, description]) => (
+                  <label className={draft.timerMode === value ? 'active' : ''} key={value}>
+                    <input type="radio" name="timer-mode" value={value} checked={draft.timerMode === value} onChange={() => selectTimerMode(value)}/>
+                    <span><strong>{label}</strong><small>{description}</small></span>
+                  </label>
+                ))}
+              </div>
+              {draft.timerMode === 'duration' && <label className="field timer-setting-field">
+                <span>목표 보고시간</span>
+                <div className="time-input"><Icon name="clock" size={18}/><input type="number" min={1} max={120} value={minutes} onChange={(event) => setDraft({ ...draft, timeLimitSeconds: event.target.value ? Math.max(60, Number(event.target.value) * 60) : undefined })}/><em>분</em></div>
+              </label>}
+              {draft.timerMode === 'deadline' && <label className="field timer-setting-field">
+                <span>회의 종료 예정시간</span>
+                <input type="datetime-local" value={draft.meetingEndAt || ''} onChange={(event) => setDraft({ ...draft, meetingEndAt: event.target.value || undefined })}/>
+                {draft.meetingEndAt && !timerValid && <small className="field-error">현재보다 이후 시간을 선택해 주세요.</small>}
+              </label>}
+              <small className="optional-time-note">기본값은 사용 안 함입니다. 타이머를 끄더라도 Decision Set, 미전달 추적, 준비도와 Evidence Navi는 동일하게 작동합니다.</small>
+            </fieldset>
+            <div className="destination-summary">
+              <span><Icon name="target" size={17}/> 목적지</span>
+              <strong>{draft.objective || '목적을 입력해 주세요.'}</strong>
             </div>
-            {draft.timerMode === 'duration' && <label className="field timer-setting-field">
-              <span>목표 보고시간</span>
-              <div className="time-input"><Icon name="clock" size={18}/><input type="number" min={1} max={120} value={minutes} onChange={(event) => setDraft({ ...draft, timeLimitSeconds: event.target.value ? Math.max(60, Number(event.target.value) * 60) : undefined })}/><em>분</em></div>
-            </label>}
-            {draft.timerMode === 'deadline' && <label className="field timer-setting-field">
-              <span>회의 종료 예정시간</span>
-              <input type="datetime-local" value={draft.meetingEndAt || ''} onChange={(event) => setDraft({ ...draft, meetingEndAt: event.target.value || undefined })}/>
-              {draft.meetingEndAt && !timerValid && <small className="field-error">현재보다 이후 시간을 선택해 주세요.</small>}
-            </label>}
-            <small className="optional-time-note">기본값은 사용 안 함입니다. 타이머를 끄더라도 Decision Set, 미전달 추적, 준비도와 Evidence Navi는 동일하게 작동합니다.</small>
-          </fieldset>
-          <div className="destination-summary">
-            <span><Icon name="target" size={17}/> 목적지</span>
-            <strong>{draft.objective || '목적을 입력해 주세요.'}</strong>
           </div>
-          <button className="button button--primary button--wide" type="submit" disabled={!valid}>
-            자료 업로드로 이동 <Icon name="arrow-right" />
-          </button>
+          <div className="setup-panel-footer">
+            <button className="button button--primary button--wide" type="submit" disabled={!valid}>
+              자료 업로드로 이동 <Icon name="arrow-right" />
+            </button>
+          </div>
         </form>}
       </section>
     </PageShell>

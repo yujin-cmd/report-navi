@@ -15,7 +15,7 @@ function escapeRegExp(value: string) {
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
-  const terms = Array.from(new Set(query.match(/[0-9]+(?:\.[0-9]+)?|[A-Za-z가-힣]{2,}/g) || []))
+  const terms = Array.from(new Set(query.match(/[0-9]+(?:\.[0-9]+)?\s*(?:kW|MW|%|억원|만원|원|kg|m²|㎡)?|[A-Za-z가-힣]{2,}/gi) || []))
     .sort((left, right) => right.length - left.length)
     .slice(0, 8);
   if (!terms.length) return <>{text}</>;
@@ -51,7 +51,10 @@ export function EvidenceDrawer({ slides, onClose, onSearch, onMove }: EvidenceDr
         <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 106kW라는 수치는 어디서 나왔습니까?"/>
         <button type="submit">검색</button>
       </form>
-      <button className="sample-query" type="button" onClick={() => runSearch('106kW라는 수치는 어디서 나온 겁니까?')}><Icon name="spark" size={15}/> 샘플 질문 실행: “106kW의 근거는?”</button>
+      <div className="evidence-presets" aria-label="빠른 검색">
+        <span><Icon name="spark" size={15}/> 빠른 검색</span>
+        {['핵심 수치 근거', '적용 전제 조건', '주요 리스크'].map((preset) => <button type="button" key={preset} onClick={() => runSearch(preset)}>{preset}</button>)}
+      </div>
 
       <div className="evidence-results">
         {!searched && <div className="evidence-empty"><div><Icon name="search" size={24}/></div><strong>질문을 입력해 주세요</strong><p>로컬 키워드 유사도로 관련 페이지를 찾습니다.</p></div>}

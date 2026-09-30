@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { formatClock } from '../lib/report';
 import { DECISION_LABELS, type AppStep, type ReportSession } from '../types';
 import { Badge, Icon, PageShell } from './common';
 
 export function ReportScreen({ session, onRestart, onReview, onStepNavigate, furthestStep }: { session: ReportSession; onRestart: () => void; onReview: () => void; onStepNavigate: (step: AppStep) => void; furthestStep: AppStep }) {
+  const [showAllMissed, setShowAllMissed] = useState(false);
   const required = session.decisionItems.filter((item) => item.required);
   const optional = session.decisionItems.filter((item) => !item.required);
   const requiredDelivered = required.filter((item) => item.delivered).length;
@@ -11,6 +12,9 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
   const missed = required.filter((item) => !item.delivered);
   const actualSeconds = Math.max(0, Math.round(((session.endedAt || Date.now()) - (session.startedAt || Date.now())) / 1000));
   const completion = required.length ? Math.round((requiredDelivered / required.length) * 100) : 0;
+  const decisionActions = required.filter((item) => item.type === 'conclusion' || item.type === 'request');
+  const deliveredDecisionActions = decisionActions.filter((item) => item.delivered).length;
+  const visibleMissed = showAllMissed ? missed : missed.slice(0, 3);
 
   useEffect(() => {
     try {
@@ -37,7 +41,7 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
       <div className="report-destination"><span><Icon name="target" size={18}/> 이번 보고의 목적지</span><strong>{session.objective}</strong><Badge tone={completion === 100 ? 'green' : 'amber'}>{completion === 100 ? '완결' : `${missed.length}개 미전달`}</Badge></div>
 
       <section className="report-kpis">
-        <div><span>목적지 도달률</span><strong>{completion}<em>%</em></strong><small>필수 정보 기준</small></div>
+        <div><span>결론·요청 전달</span><strong>{deliveredDecisionActions}<em>/ {decisionActions.length}</em></strong><small>판단과 다음 행동 기준</small></div>
         <div><span>필수 정보 전달</span><strong>{requiredDelivered}<em>/ {required.length}</em></strong><small>보고 중 확인된 핵심 정보</small></div>
         <div><span>보완이 필요한 핵심</span><strong>{missed.length}<em>개</em></strong><small>{missed.length ? '다음 보고 전 보완 필요' : '필수 정보 전달 완료'}</small></div>
       </section>
@@ -63,7 +67,7 @@ export function ReportScreen({ session, onRestart, onReview, onStepNavigate, fur
         </div>
         <aside className="missed-summary">
           <div className="panel-heading"><div><span>NEXT ACTION</span><h2>{missed.length ? '다음 보고 전 보완' : '보고 완결'}</h2></div></div>
-          {missed.length ? <>{missed.map((item) => <div className="missed-card" key={item.id}><span>{DECISION_LABELS[item.type]}</span><strong>{item.title}</strong><p>{item.detail}</p></div>)}<p className="missed-note">미전달 항목은 다음 보고의 Decision Set에 우선 반영하세요.</p></> : <div className="arrival-complete"><div><Icon name="check" size={26}/></div><strong>필수 정보가 모두 전달됐습니다</strong><p>결론·근거·전제·리스크·요청사항이 보고 과정에서 확인되었습니다.</p></div>}
+          {missed.length ? <>{visibleMissed.map((item) => <div className="missed-card" key={item.id}><span>{DECISION_LABELS[item.type]}</span><strong>{item.title}</strong><p>{item.detail}</p></div>)}{missed.length > 3 && <button className="missed-list-toggle" type="button" onClick={() => setShowAllMissed((value) => !value)}>{showAllMissed ? '핵심 3개만 보기' : `나머지 ${missed.length - 3}개 보기`} <Icon name={showAllMissed ? 'chevron-left' : 'chevron-right'} size={15}/></button>}<p className="missed-note">미전달 항목은 다음 보고의 Decision Set에 우선 반영하세요.</p></> : <div className="arrival-complete"><div><Icon name="check" size={26}/></div><strong>필수 정보가 모두 전달됐습니다</strong><p>결론·근거·전제·리스크·요청사항이 보고 과정에서 확인되었습니다.</p></div>}
         </aside>
       </section>
 

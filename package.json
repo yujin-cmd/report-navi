@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run --environment jsdom"
+    "test": "vitest run --dir src --environment jsdom"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",

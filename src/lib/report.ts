@@ -18,7 +18,7 @@ const NUMBER_WORDS: Array<[RegExp, string]> = [
 // 음성 인식은 "B안"을 "비안"처럼 알파벳 이름의 한글 표기로 적는다.
 // 앞말이 한글이면 바꾸지 않으므로 "예비안", "준비 안" 등은 영향이 없다.
 const LETTER_NAMES: Record<string, string> = { 에이: 'a', 비: 'b', 씨: 'c', 디: 'd' };
-const LETTER_PLAN = /(^|[^가-힣a-z0-9])(에이|비|씨|디)\s?안(?=을|를|이|은|는|의|과|와|도|으로|로|에|만|보다|까지|적용|대비|\s|$|[^가-힣])/g;
+const LETTER_PLAN = /(^|[^가-힣a-z0-9])(에이|비|씨|디)\s?안(?=을|를|이|은|는|의|과|와|도|으로|로|에|만|보다|까지|입|인|적용|대비|채택|\s|$|[^가-힣])/g;
 
 export function normalizeText(input: string): string {
   let text = input.toLowerCase().replace(/(\d),(?=\d{3}\b)/g, '$1');
@@ -110,10 +110,21 @@ export function decisionMatchScore(transcript: string, item: DecisionItem): numb
   return Math.max(...phrases.map((phrase) => phraseMatchScore(transcript, phrase)));
 }
 
+/**
+ * 한 발화가 여러 항목을 동시에 넘기면, 가장 잘 맞는 항목과 점수 차이가 작은 것만 인정한다.
+ * "B안으로 결정하겠습니다"(결론 1.00)가 요청 항목(0.66)까지 체크하는 일을 막으면서,
+ * 한 문장에 두 정보를 모두 말한 경우(둘 다 높은 점수)는 그대로 둘 다 체크한다.
+ */
+const CO_MATCH_MARGIN = 0.2;
+
 export function findDeliveredItemIds(transcript: string, items: DecisionItem[], threshold = 0.58): string[] {
-  return items
-    .filter((item) => !item.delivered && decisionMatchScore(transcript, item) >= threshold)
-    .map((item) => item.id);
+  const scored = items
+    .filter((item) => !item.delivered)
+    .map((item) => ({ id: item.id, score: decisionMatchScore(transcript, item) }))
+    .filter((entry) => entry.score >= threshold);
+  if (!scored.length) return [];
+  const best = Math.max(...scored.map((entry) => entry.score));
+  return scored.filter((entry) => entry.score >= best - CO_MATCH_MARGIN).map((entry) => entry.id);
 }
 
 export function getRemainingRequiredSeconds(items: DecisionItem[]): number {
@@ -508,4 +519,27 @@ export function formatClock(totalSeconds: number): string {
   const minutes = Math.floor(safe / 60).toString().padStart(2, '0');
   const seconds = (safe % 60).toString().padStart(2, '0');
   return `${minutes}:${seconds}`;
+}
+
+export interface TranscriptChunk {
+  text: string;
+  at: number;
+}
+
+/**
+ * 음성 인식은 말을 잠깐 멈추면 한 문장을 여러 조각으로 확정한다.
+ * ("비안 적용을" / "제안드립니다") 조각 하나씩 검사하면 둘 다 기준에 못 미치므로,
+ * 최근 몇 초 안의 조각만 이어 붙여 검사한다. 오래된 문장과 섞이지 않도록 시간과 개수를 제한한다.
+ */
+export function recentTranscriptWindow(
+  chunks: TranscriptChunk[],
+  now: number,
+  windowMs = 3500,
+  maxChunks = 2,
+): string {
+  return chunks
+    .filter((chunk) => now - chunk.at <= windowMs)
+    .slice(-maxChunks)
+    .map((chunk) => chunk.text)
+    .join(' ');
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloneDemoItems, DEMO_SLIDES } from '../data/demo';
-import { decisionMatchScore, findDeliveredItemIds, generateExpectedQuestions, generateFallbackDecisionSet, getTimeGuideState, normalizeText, searchEvidence, shouldPrioritize } from './report';
+import { decisionMatchScore, findDeliveredItemIds, recentTranscriptWindow, generateExpectedQuestions, generateFallbackDecisionSet, getTimeGuideState, normalizeText, searchEvidence, shouldPrioritize } from './report';
 
 describe('Report Navi local matching', () => {
   it('normalizes Korean numeric unit variants', () => {
@@ -186,5 +186,59 @@ describe('한국어 발화 인식 보정', () => {
   it('숫자는 여전히 정확히 일치해야 한다', () => {
     const evidence = items.find((item) => item.title.includes('106.2'))!;
     expect(decisionMatchScore('최대 냉각부하는 96.5킬로와트입니다', evidence)).toBe(0);
+  });
+});
+
+describe('실제 발표 음성 조건', () => {
+  const items = () => cloneDemoItems();
+  const titleOf = (id: string) => cloneDemoItems().find((item) => item.id === id)!.title;
+
+  it('"비안입니다" 형태도 B안으로 인식한다', () => {
+    expect(normalizeText('제안은 비안입니다')).toContain('b안입니다');
+  });
+
+  it('자연스러운 결론 표현을 결론 항목으로 인식한다', () => {
+    for (const said of ['비안을 선택하겠습니다', '비안으로 결정하겠습니다', '비안을 권고합니다', '비안 채택을 제안합니다', '결론은 비안입니다']) {
+      const ids = findDeliveredItemIds(said, items());
+      expect(ids.map(titleOf)).toEqual(['냉각설비 B안 적용 제안']);
+    }
+  });
+
+  it('요청 표현은 결론까지 함께 체크하지 않는다', () => {
+    for (const said of ['비안 채택을 승인해 주세요', '비안 승인을 부탁드립니다']) {
+      expect(findDeliveredItemIds(said, items()).map(titleOf)).toEqual(['B안 적용 승인 요청']);
+    }
+  });
+
+  it('한 문장에 두 정보를 모두 말하면 둘 다 체크한다', () => {
+    const ids = findDeliveredItemIds('최대 냉각부하는 106.2킬로와트이고 초기 공사비는 8퍼센트 증가합니다', items());
+    expect(ids.length).toBe(2);
+  });
+
+  it('두 조각으로 나뉜 발화를 이어 붙여 인식한다', () => {
+    const now = 10_000;
+    const joined = recentTranscriptWindow([{ text: '비안 적용을', at: now - 1500 }, { text: '제안드립니다', at: now }], now);
+    expect(findDeliveredItemIds('제안드립니다', items())).toEqual([]);
+    expect(findDeliveredItemIds(joined, items()).map(titleOf)).toEqual(['냉각설비 B안 적용 제안']);
+  });
+
+  it('오래된 조각이나 세 조각 이상은 묶지 않는다', () => {
+    const now = 10_000;
+    expect(recentTranscriptWindow([{ text: '비안 적용을', at: now - 6000 }, { text: '제안드립니다', at: now }], now)).toBe('제안드립니다');
+    expect(recentTranscriptWindow([{ text: 'a', at: now - 2 }, { text: 'b', at: now - 1 }, { text: 'c', at: now }], now)).toBe('b c');
+  });
+
+  it('A안과 B안 비교 중 B안만 언급하면 결론으로 체크하지 않는다', () => {
+    const now = 10_000;
+    const joined = recentTranscriptWindow([{ text: '비교해 보겠습니다', at: now - 1500 }, { text: '에이안과 비안을', at: now }], now);
+    expect(findDeliveredItemIds(joined, items())).toEqual([]);
+  });
+
+  it('데모 표현 변형은 모두 해당 항목을 실제로 체크할 수 있다', () => {
+    for (const item of items()) {
+      for (const variant of item.variants) {
+        expect(decisionMatchScore(variant, item)).toBeGreaterThanOrEqual(0.58);
+      }
+    }
   });
 });

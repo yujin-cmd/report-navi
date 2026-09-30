@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { findDeliveredItemIds, formatClock, getNextRequiredItem, getTimeGuideState, shouldPrioritize } from '../lib/report';
+import { findDeliveredItemIds, formatClock, getNextRequiredItem, getTimeGuideState, recentTranscriptWindow, shouldPrioritize, type TranscriptChunk } from '../lib/report';
 import { DECISION_LABELS, type ProjectorSnapshot, type ReportSession, type SlideData } from '../types';
 import { Badge, Icon, SlideCanvas } from './common';
 import { EvidenceDrawer } from './EvidenceDrawer';
@@ -56,15 +56,23 @@ export function PresenterScreen({ session, slides, setSession, onFinish }: Prese
     toastTimerRef.current = window.setTimeout(() => setToast(''), 1800);
   }, []);
 
-  const handleTranscript = useCallback((text: string) => {
+  const speechChunksRef = useRef<TranscriptChunk[]>([]);
+
+  const handleTranscript = useCallback((text: string, matchText: string = text) => {
     setSession((current) => {
-      const matchedIds = new Set(findDeliveredItemIds(text, current.decisionItems));
+      const matchedIds = new Set(findDeliveredItemIds(matchText, current.decisionItems));
       const nextItems = current.decisionItems.map((item) => matchedIds.has(item.id) ? { ...item, delivered: true, deliveredAt: Date.now(), manuallyOverridden: false } : item);
       return { ...current, transcript: `${current.transcript}${current.transcript ? '\n' : ''}${text}`, decisionItems: nextItems };
     });
   }, [setSession]);
 
-  const speech = useSpeechRecognition(handleTranscript);
+  const handleSpeech = useCallback((text: string) => {
+    const now = Date.now();
+    speechChunksRef.current = [...speechChunksRef.current.filter((chunk) => now - chunk.at <= 3500), { text, at: now }].slice(-2);
+    handleTranscript(text, recentTranscriptWindow(speechChunksRef.current, now));
+  }, [handleTranscript]);
+
+  const speech = useSpeechRecognition(handleSpeech);
 
   const moveToSlide = useCallback((target: number) => {
     const safeTarget = Math.min(Math.max(1, target), slides.length || 1);

@@ -153,3 +153,38 @@ describe('임의 PDF 로컬 분석', () => {
     expect(items.some((item) => item.required)).toBe(true);
   });
 });
+
+describe('한국어 발화 인식 보정', () => {
+  const items = cloneDemoItems();
+  const conclusion = items.find((item) => item.title.includes('B안') && item.type === 'conclusion')!;
+  const request = items.find((item) => item.title.includes('B안') && item.type === 'request')!;
+
+  it('음성 인식이 적은 "비안"을 B안으로 인식한다', () => {
+    expect(normalizeText('비안 적용을 제안드립니다')).toContain('b안');
+    expect(normalizeText('비 안 적용')).toContain('b안');
+    expect(normalizeText('에이안과 비안을 비교')).toBe('a안과 b안을 비교');
+  });
+
+  it('한글 단어 안의 "비안"은 바꾸지 않는다', () => {
+    expect(normalizeText('예비안을 검토')).toContain('예비안');
+    expect(normalizeText('비안정 구간')).toContain('비안정');
+  });
+
+  it('조사와 어미가 붙어도 결론 항목이 체크된다', () => {
+    expect(decisionMatchScore('B안 적용을 제안드립니다', conclusion)).toBeGreaterThanOrEqual(0.58);
+    expect(decisionMatchScore('비안 적용을 제안드립니다', conclusion)).toBeGreaterThanOrEqual(0.58);
+  });
+
+  it('조사와 어미가 붙어도 요청 항목이 체크된다', () => {
+    expect(decisionMatchScore('비안 적용 승인을 요청드립니다', request)).toBeGreaterThanOrEqual(0.58);
+  });
+
+  it('결론을 말했다고 요청 항목까지 체크되지는 않는다', () => {
+    expect(decisionMatchScore('비안 적용을 제안드립니다', request)).toBeLessThan(0.58);
+  });
+
+  it('숫자는 여전히 정확히 일치해야 한다', () => {
+    const evidence = items.find((item) => item.title.includes('106.2'))!;
+    expect(decisionMatchScore('최대 냉각부하는 96.5킬로와트입니다', evidence)).toBe(0);
+  });
+});

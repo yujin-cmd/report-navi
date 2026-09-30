@@ -15,8 +15,16 @@ const NUMBER_WORDS: Array<[RegExp, string]> = [
   [/만\s*원/gi, ' manwon '],
 ];
 
+// 음성 인식은 "B안"을 "비안"처럼 알파벳 이름의 한글 표기로 적는다.
+// 앞말이 한글이면 바꾸지 않으므로 "예비안", "준비 안" 등은 영향이 없다.
+const LETTER_NAMES: Record<string, string> = { 에이: 'a', 비: 'b', 씨: 'c', 디: 'd' };
+const LETTER_PLAN = /(^|[^가-힣a-z0-9])(에이|비|씨|디)\s?안(?=을|를|이|은|는|의|과|와|도|으로|로|에|만|보다|까지|적용|대비|\s|$|[^가-힣])/g;
+
 export function normalizeText(input: string): string {
   let text = input.toLowerCase().replace(/(\d),(?=\d{3}\b)/g, '$1');
+  text = text
+    .replace(LETTER_PLAN, (_m, pre: string, name: string) => `${pre}${LETTER_NAMES[name]}안`)
+    .replace(/(^|[^a-z0-9])([a-d])\s+안/g, '$1$2안');
   for (const [pattern, replacement] of NUMBER_WORDS) text = text.replace(pattern, replacement);
   return text
     .replace(/([0-9]+(?:\.[0-9]+)?)(percent|kw|mw|sqm|celsius|eokwon|manwon)/g, '$1 $2')
@@ -51,6 +59,18 @@ function diceSimilarity(left: string, right: string): number {
   return (2 * overlap) / (leftSet.size + rightSet.size);
 }
 
+/**
+ * 한국어는 조사와 어미가 붙어 같은 단어가 다른 토큰이 된다.
+ * ("b안" / "b안을", "적용" / "적용을", "제안" / "제안드립니다")
+ * 기준 단어가 2글자 이상이고 발화 토큰이 그 단어로 시작하면 같은 단어로 본다.
+ * 숫자 토큰은 여기서 제외하고 기존처럼 정확히 일치해야 한다.
+ */
+function sameStem(spoken: string, token: string): boolean {
+  if (/^\d/.test(token) || /^\d/.test(spoken)) return false;
+  if (token.length < 2 || spoken.length <= token.length) return false;
+  return spoken.startsWith(token);
+}
+
 export function phraseMatchScore(transcript: string, phrase: string): number {
   const normalizedTranscript = normalizeText(transcript);
   const normalizedPhrase = normalizeText(phrase);
@@ -66,7 +86,8 @@ export function phraseMatchScore(transcript: string, phrase: string): number {
 
   const matched = phraseTokens.filter((token) => {
     if (transcriptTokens.has(token)) return true;
-    return [...transcriptTokens].some((spoken) => token.length >= 3 && spoken.length >= 3 && diceSimilarity(spoken, token) >= 0.76);
+    return [...transcriptTokens].some((spoken) => sameStem(spoken, token)
+      || (token.length >= 3 && spoken.length >= 3 && diceSimilarity(spoken, token) >= 0.76));
   }).length;
   const coverage = matched / phraseTokens.length;
   const shape = diceSimilarity(normalizedTranscript, normalizedPhrase);
